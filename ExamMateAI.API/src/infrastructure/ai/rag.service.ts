@@ -1,5 +1,6 @@
-import { getAIProvider } from './ai.factory.js';
+import { getAIProvider, getActiveProviderName } from './ai.factory.js';
 import { documentRetrievalService, RetrievedChunk } from './document-retrieval.service.js';
+
 
 export interface RAGSourceCitation {
   documentId: string;
@@ -78,7 +79,7 @@ export class RAGService {
       sourceCitation: primaryCitation,
       pageNumber: primaryPage,
       confidence: aiResult.confidence,
-      provider: 'openai',
+      provider: getActiveProviderName(),
     };
   }
 }

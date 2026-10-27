@@ -45,12 +45,18 @@ if (process.env.NODE_ENV !== 'production') {
 
 export async function testDatabaseConnection(): Promise<boolean> {
   const target = getMaskedDbHost(config.databaseUrl);
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    logger.info(`[Database] Successfully connected to PostgreSQL database at ${target}`);
-    return true;
-  } catch (err: any) {
-    logger.warn({ error: err.message, target }, '[Database Warning] PostgreSQL connection check failed. Ensure DATABASE_URL is reachable.');
-    return false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      logger.info(`[Database] Successfully connected to PostgreSQL database at ${target}`);
+      return true;
+    } catch (err: any) {
+      if (attempt === 3) {
+        logger.warn({ error: err.message, target }, '[Database Warning] PostgreSQL connection check failed. Ensure DATABASE_URL is reachable.');
+        return false;
+      }
+      await new Promise((r) => setTimeout(r, 1200));
+    }
   }
+  return false;
 }

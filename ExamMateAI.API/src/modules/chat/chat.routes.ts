@@ -19,4 +19,6 @@ const chatRequestSchema = z.object({
 export const chatRoutes = Router();
 
 chatRoutes.post('/', authenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
+chatRoutes.post('/message', authenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
 chatRoutes.get('/history/:conversationId', authenticate, chatController.getHistory);
+

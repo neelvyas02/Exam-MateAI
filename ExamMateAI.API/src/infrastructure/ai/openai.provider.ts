@@ -292,7 +292,7 @@ Output ONLY a JSON array of objects with this schema:
     jsonMode: boolean
   ): Promise<string> {
     if (!this.client || !config.ai.openaiApiKey) {
-      throw new Error('OPENAI_API_KEY is not configured on the backend server.');
+      throw new Error('OPENAI_API_KEY is not configured on the backend server. Please set OPENAI_API_KEY in ExamMateAI.API/.env or set AI_PROVIDER=gemini.');
     }
 
     for (let attempt = 1; attempt <= 3; attempt++) {

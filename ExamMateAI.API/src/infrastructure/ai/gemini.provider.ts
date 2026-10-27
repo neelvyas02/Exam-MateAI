@@ -17,7 +17,7 @@ export class GeminiProvider implements IAIProvider {
 
   constructor() {
     this.apiKey = config.ai.geminiApiKey;
-    this.model = config.ai.geminiModel || 'gemini-1.5-flash';
+    this.model = config.ai.geminiModel || 'gemini-3.5-flash';
     this.temperature = config.ai.temperature;
     this.maxTokens = config.ai.maxTokens;
   }
