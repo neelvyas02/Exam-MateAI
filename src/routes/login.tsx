@@ -1,20 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { authApi } from "@/lib/api";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Login — ExamMate AI" },
-      { name: "description", content: "Sign in to your ExamMate AI study workspace." },
-      { property: "og:title", content: "Login — ExamMate AI" },
-      { property: "og:description", content: "Sign in to your ExamMate AI study workspace." },
+      { title: "Login — ExamMateAI" },
+      { name: "description", content: "Log in to your ExamMateAI study workspace." },
+      { property: "og:title", content: "Login — ExamMateAI" },
+      { property: "og:description", content: "Log in to your ExamMateAI study workspace." },
     ],
   }),
   component: LoginPage,
@@ -22,59 +21,109 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const response = await authApi.login({ email, password });
+      toast.success(response.message || "Signed in successfully");
+      navigate({ to: "/app" });
+    } catch (error: any) {
+      console.error("[AUTH LOGIN ERROR]", {
+        status: error?.statusCode,
+        endpoint: "/auth/login",
+        message: error?.message,
+      });
+      const errorText =
+        error?.errors?.[0] && !error.errors[0].includes("transient failure")
+          ? error.errors[0]
+          : error?.message || "Invalid email or password.";
+      toast.error(errorText);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to continue with your uploaded materials."
+      title="Welcome back."
+      subtitle="Sign in to your ExamMateAI account."
       footer={
         <>
-          New to ExamMate AI?{" "}
-          <Link to="/register" className="font-medium text-primary hover:underline">
-            Create an account
+          Don't have an account?{" "}
+          <Link to="/register" className="font-medium text-secondary hover:underline">
+            Sign up
           </Link>
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setLoading(true);
-          setTimeout(() => {
-            setLoading(false);
-            toast.success("Signed in", { description: "Frontend demo — no backend connected yet." });
-            navigate({ to: "/app" });
-          }, 700);
-        }}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="email" type="email" required placeholder="you@college.edu" className="pl-9" />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="password" type="password" required placeholder="••••••••" className="pl-9" />
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <Label className="flex items-center gap-2 text-sm font-normal text-muted-foreground">
-            <Checkbox id="remember" /> Remember me
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-xs font-semibold">
+            Email
           </Label>
-          <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
-            Forgot password?
-          </Link>
+          <Input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@college.edu"
+            className="rounded-md"
+          />
         </div>
-        <Button type="submit" className="w-full rounded-xl" disabled={loading}>
-          {loading ? "Signing in…" : "Sign in"}
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-xs font-semibold">
+              Password
+            </Label>
+            <Link to="/forgot-password" className="text-xs font-medium text-secondary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <Input
+            id="password"
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            className="rounded-md"
+          />
+        </div>
+
+        <Button type="submit" className="w-full rounded-none font-bold tracking-wider uppercase text-xs h-10 mt-2" disabled={loading}>
+          {loading ? "LOGGING IN..." : "LOG IN"}
+        </Button>
+
+        <div className="relative my-3 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <span className="relative bg-card px-2 text-[11px] font-sans text-muted-foreground uppercase tracking-wider">
+            OR
+          </span>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full rounded-none font-bold tracking-wider uppercase text-xs h-10"
+          onClick={() => {
+            toast.info("Entering ExamMateAI workspace in preview mode.");
+            navigate({ to: "/app" });
+          }}
+        >
+          ENTER WORKSPACE AS GUEST
         </Button>
       </form>
     </AuthShell>
   );
 }
+
+

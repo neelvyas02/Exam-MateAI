@@ -60,7 +60,7 @@ function SettingsPage() {
               <Label htmlFor="course">Course / branch</Label>
               <Input id="course" defaultValue="B.E. Computer Science" className="rounded-xl" />
             </div>
-            <Button className="rounded-xl" onClick={() => toast.success("Profile saved locally")}>
+            <Button className="rounded-none" onClick={() => toast.success("Profile saved locally")}>
               Save changes
             </Button>
           </CardContent>
@@ -117,7 +117,7 @@ function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <KeyRound className="h-4 w-4 text-primary" /> API key
-              <Badge variant="outline" className="rounded-full text-[11px]">
+              <Badge variant="outline" className="rounded-sm text-[11px]">
                 Optional
               </Badge>
             </CardTitle>
@@ -127,7 +127,7 @@ function SettingsPage() {
               Reserved for a future backend integration. Nothing is stored or sent in this build.
             </p>
             <Input placeholder="Paste your key here" className="rounded-xl font-mono" />
-            <Button variant="outline" className="rounded-xl" onClick={() => toast.info("Not connected yet")}>
+            <Button variant="outline" className="rounded-none" onClick={() => toast.info("Not connected yet")}>
               Save key
             </Button>
           </CardContent>

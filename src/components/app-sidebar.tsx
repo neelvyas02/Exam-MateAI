@@ -26,19 +26,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-const libraryItems = [
-  { title: "Dashboard", url: "/app", icon: LayoutDashboard, exact: true },
-  { title: "Study Materials", url: "/app/materials", icon: BookOpenCheck },
-  { title: "Previous Papers", url: "/app/papers", icon: FileStack },
-];
-
-const aiItems = [
-  { title: "AI Study Assistant", url: "/app/assistant", icon: MessagesSquare },
-  { title: "Question Paper Analysis", url: "/app/analysis", icon: FileSearch },
-  { title: "Notes Summarizer", url: "/app/summarizer", icon: ScrollText },
-  { title: "Quiz Generator", url: "/app/quiz", icon: ListChecks },
-  { title: "Important Topics", url: "/app/topics", icon: Star },
-  { title: "Search Documents", url: "/app/search", icon: Search },
+const primaryNavItems = [
+  { title: "Home", url: "/app", icon: LayoutDashboard, exact: true },
+  { title: "Library", url: "/app/materials", icon: BookOpenCheck },
+  { title: "Ask AI", url: "/app/assistant", icon: MessagesSquare },
+  { title: "PYQ Analyzer", url: "/app/analysis", icon: FileSearch },
+  { title: "Quiz", url: "/app/quiz", icon: ListChecks },
 ];
 
 const systemItems = [{ title: "Settings", url: "/app/settings", icon: Settings }];
@@ -46,7 +39,7 @@ const systemItems = [{ title: "Settings", url: "/app/settings", icon: Settings }
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
 
-  const renderGroup = (label: string, items: typeof libraryItems) => (
+  const renderGroup = (label: string, items: typeof primaryNavItems) => (
     <SidebarGroup>
       <SidebarGroupLabel>{label}</SidebarGroupLabel>
       <SidebarGroupContent>
@@ -77,8 +70,7 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        {renderGroup("Library", libraryItems)}
-        {renderGroup("AI Tools", aiItems)}
+        {renderGroup("Navigation", primaryNavItems)}
         {renderGroup("System", systemItems)}
       </SidebarContent>
       <SidebarFooter className="border-t p-3 group-data-[collapsible=icon]:hidden">

@@ -69,40 +69,40 @@ function TopicsPage() {
       />
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="rounded-2xl shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Flame className="h-4 w-4 text-primary" /> Frequently asked topics
+        <Card className="rounded-2xl border border-border bg-card shadow-soft">
+          <CardHeader className="border-b border-border pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-display font-medium text-foreground">
+              <Flame className="h-4 w-4 text-secondary" /> Frequently asked topics
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-4 font-sans">
             {frequent.map((f) => (
               <div key={f.topic}>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                  <p className="truncate text-sm font-medium">{f.topic}</p>
-                  <Badge variant="secondary" className="shrink-0 rounded-full text-[11px]">
+                  <p className="truncate text-sm font-medium text-foreground">{f.topic}</p>
+                  <Badge variant="secondary" className="shrink-0 rounded-sm text-[11px]">
                     {f.asked}× asked
                   </Badge>
                 </div>
-                <Progress value={(f.asked / max) * 100} className="mt-2 h-2" />
+                <Progress value={(f.asked / max) * 100} className="mt-2 h-2 rounded-full" />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Repeat className="h-4 w-4 text-primary" /> Repeated topics
+        <Card className="rounded-2xl border border-border bg-card shadow-soft">
+          <CardHeader className="border-b border-border pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-display font-medium text-foreground">
+              <Repeat className="h-4 w-4 text-secondary" /> Repeated topics
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4 font-sans">
             <div className="flex flex-wrap gap-2">
               {repeated.map((r) => (
                 <Badge
                   key={r}
                   variant="outline"
-                  className="rounded-full px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                  className="rounded-sm px-3 py-1 text-xs transition-colors hover:bg-accent"
                 >
                   {r}
                 </Badge>
@@ -111,29 +111,29 @@ function TopicsPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Layers className="h-4 w-4 text-primary" /> High weightage units
+        <Card className="rounded-2xl border border-border bg-card shadow-soft">
+          <CardHeader className="border-b border-border pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-display font-medium text-foreground">
+              <Layers className="h-4 w-4 text-secondary" /> High weightage units
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 pt-4 font-sans">
             {units.map((u) => (
               <div
                 key={u.unit}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3.5 transition-colors hover:bg-accent/40"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border p-3.5 transition-colors hover:bg-accent/40"
               >
-                <p className="truncate text-sm font-medium">{u.unit}</p>
-                <Badge className="shrink-0 rounded-full text-[11px]">{u.weight} marks</Badge>
+                <p className="truncate text-sm font-medium text-foreground">{u.unit}</p>
+                <Badge className="shrink-0 rounded-sm text-[11px] bg-secondary text-secondary-foreground">{u.weight} marks</Badge>
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Lightbulb className="h-4 w-4 text-primary" /> Important concepts
+        <Card className="rounded-2xl border border-border bg-card shadow-soft">
+          <CardHeader className="border-b border-border pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-display font-medium text-foreground">
+              <Lightbulb className="h-4 w-4 text-secondary" /> Important concepts
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">

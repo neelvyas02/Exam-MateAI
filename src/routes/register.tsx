@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Lock, Mail, User } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { authApi } from "@/lib/api";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,15 +10,15 @@ import { Label } from "@/components/ui/label";
 export const Route = createFileRoute("/register")({
   head: () => ({
     meta: [
-      { title: "Create account — ExamMate AI" },
+      { title: "Create Account — ExamMateAI" },
       {
         name: "description",
-        content: "Create an ExamMate AI account to upload study materials and previous year papers.",
+        content: "Create your ExamMateAI account to get started.",
       },
-      { property: "og:title", content: "Create account — ExamMate AI" },
+      { property: "og:title", content: "Create Account — ExamMateAI" },
       {
         property: "og:description",
-        content: "Create an ExamMate AI account to upload study materials and previous year papers.",
+        content: "Create your ExamMateAI account to get started.",
       },
     ],
   }),
@@ -27,60 +27,139 @@ export const Route = createFileRoute("/register")({
 
 function RegisterPage() {
   const navigate = useNavigate();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await authApi.register({ fullName: name, email, password });
+      toast.success(response.message || "Account created successfully");
+      navigate({ to: "/app" });
+    } catch (error: any) {
+      console.error("[AUTH REGISTER ERROR]", {
+        status: error?.statusCode,
+        endpoint: "/auth/register",
+        message: error?.message,
+      });
+      const errorText =
+        error?.errors?.[0] && !error.errors[0].includes("transient failure")
+          ? error.errors[0]
+          : error?.message || "Registration failed. Please try again.";
+      toast.error(errorText);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Start uploading study material and previous year papers."
+      title="Create your account."
+      subtitle="Sign up for ExamMateAI to manage your study workspace."
       footer={
         <>
-          Already registered?{" "}
-          <Link to="/login" className="font-medium text-primary hover:underline">
-            Sign in
+          Already have an account?{" "}
+          <Link to="/login" className="font-medium text-secondary hover:underline">
+            Log in
           </Link>
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setLoading(true);
-          setTimeout(() => {
-            setLoading(false);
-            toast.success("Account created", {
-              description: "Frontend demo — no backend connected yet.",
-            });
+      <form className="space-y-3.5" onSubmit={handleSubmit}>
+        <div className="space-y-1.5">
+          <Label htmlFor="name" className="text-xs font-semibold">
+            Name
+          </Label>
+          <Input
+            id="name"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ananya Rao"
+            className="rounded-md"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-xs font-semibold">
+            Email
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@college.edu"
+            className="rounded-md"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-xs font-semibold">
+            Password
+          </Label>
+          <Input
+            id="password"
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            className="rounded-md"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="confirmPassword" className="text-xs font-semibold">
+            Confirm Password
+          </Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="••••••••"
+            className="rounded-md"
+          />
+        </div>
+
+        <Button type="submit" className="w-full rounded-none font-bold tracking-wider uppercase text-xs h-10 mt-2" disabled={loading}>
+          {loading ? "CREATING ACCOUNT..." : "CREATE ACCOUNT"}
+        </Button>
+
+        <div className="relative my-3 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <span className="relative bg-card px-2 text-[11px] font-sans text-muted-foreground uppercase tracking-wider">
+            OR
+          </span>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full rounded-none font-bold tracking-wider uppercase text-xs h-10"
+          onClick={() => {
+            toast.info("Entering ExamMateAI workspace in preview mode.");
             navigate({ to: "/app" });
-          }, 700);
-        }}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="name">Full name</Label>
-          <div className="relative">
-            <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="name" required placeholder="Ananya Rao" className="pl-9" />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="email" type="email" required placeholder="you@college.edu" className="pl-9" />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input id="password" type="password" required placeholder="••••••••" className="pl-9" />
-          </div>
-        </div>
-        <Button type="submit" className="w-full rounded-xl" disabled={loading}>
-          {loading ? "Creating account…" : "Create account"}
+          }}
+        >
+          ENTER WORKSPACE AS GUEST
         </Button>
       </form>
     </AuthShell>
   );
 }
+
+

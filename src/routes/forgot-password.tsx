@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Mail } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth-shell";
@@ -10,12 +9,12 @@ import { Label } from "@/components/ui/label";
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
     meta: [
-      { title: "Reset password — ExamMate AI" },
-      { name: "description", content: "Request a password reset link for your ExamMate AI account." },
-      { property: "og:title", content: "Reset password — ExamMate AI" },
+      { title: "Reset Password — ExamMateAI" },
+      { name: "description", content: "Request a password reset link for your ExamMateAI account." },
+      { property: "og:title", content: "Reset Password — ExamMateAI" },
       {
         property: "og:description",
-        content: "Request a password reset link for your ExamMate AI account.",
+        content: "Request a password reset link for your ExamMateAI account.",
       },
     ],
   }),
@@ -27,18 +26,17 @@ function ForgotPasswordPage() {
 
   return (
     <AuthShell
-      title="Forgot password"
-      subtitle="We'll send a reset link to your registered email address."
+      title="Reset your password."
+      subtitle="Enter your registered email address to receive a reset link."
       footer={
-        <Link to="/login" className="font-medium text-primary hover:underline">
-          Back to sign in
+        <Link to="/login" className="font-medium text-secondary hover:underline">
+          Back to log in
         </Link>
       }
     >
       {sent ? (
-        <div className="rounded-2xl border bg-accent/50 p-5 text-sm text-accent-foreground">
-          If an account exists for that address, a reset link is on its way. This is a frontend demo,
-          so no email is actually sent.
+        <div className="rounded-xl border border-border bg-accent/20 p-4 text-xs font-sans text-foreground leading-relaxed">
+          If an account exists for that address, a reset link has been dispatched.
         </div>
       ) : (
         <form
@@ -49,18 +47,19 @@ function ForgotPasswordPage() {
             toast.success("Reset link requested");
           }}
         >
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="email" type="email" required placeholder="you@college.edu" className="pl-9" />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email" className="text-xs font-semibold">
+              Email
+            </Label>
+            <Input id="email" type="email" required placeholder="you@college.edu" className="rounded-md" />
           </div>
-          <Button type="submit" className="w-full rounded-xl">
-            Send reset link
+          <Button type="submit" className="w-full rounded-none font-bold tracking-wider uppercase text-xs h-10 mt-2">
+            SEND RESET LINK
           </Button>
         </form>
       )}
     </AuthShell>
   );
 }
+
+

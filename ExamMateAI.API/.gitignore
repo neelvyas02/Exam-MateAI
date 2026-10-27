@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+Logs/
+*.log
+uploads/
+coverage/
+_aspnet_backup/
+.DS_Store

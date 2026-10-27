@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -16,23 +15,30 @@ export function AuthShell({
   footer: ReactNode;
 }) {
   return (
-    <div className="grid-hero flex min-h-screen flex-col">
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-4 sm:px-6">
-        <Link to="/" className="min-w-0">
-          <Logo />
+    <div className="flex min-h-screen flex-col bg-background font-sans text-foreground">
+      {/* HEADER */}
+      <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-6 py-6">
+        <Link to="/" className="font-display text-2xl font-bold tracking-tight text-foreground hover:opacity-90 transition-opacity">
+          ExamMate<span className="text-secondary">AI</span>
         </Link>
         <ThemeToggle />
       </div>
-      <div className="flex flex-1 items-center justify-center px-4 py-10">
-        <Card className="animate-rise glass w-full max-w-md rounded-3xl shadow-glow">
-          <CardContent className="p-7 sm:p-8">
-            <h1 className="text-2xl font-bold">{title}</h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">{subtitle}</p>
-            <div className="mt-7">{children}</div>
-            <div className="mt-6 text-center text-sm text-muted-foreground">{footer}</div>
+
+      {/* CENTERED AUTH CONTAINER */}
+      <div className="flex flex-1 items-center justify-center px-4 py-12">
+        <Card className="w-full max-w-md rounded-2xl border border-border bg-card shadow-soft">
+          <CardContent className="p-8">
+            <div className="text-center mb-6">
+              <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+              <p className="mt-1.5 text-xs font-sans text-muted-foreground leading-relaxed">{subtitle}</p>
+            </div>
+            <div className="space-y-4">{children}</div>
+            <div className="mt-6 text-center text-xs font-sans text-muted-foreground pt-4 border-t border-border">{footer}</div>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
+
+

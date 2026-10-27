@@ -1,0 +1,292 @@
+// Prisma Schema for ExamMate AI
+// Supports Supabase PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  fullName           String
+  email              String    @unique
+  passwordHash       String
+  role               String    @default("Student")
+  profilePhoto       String?
+  refreshTokenHash   String?
+  refreshTokenExpiry DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  isDeleted          Boolean   @default(false)
+  deletedAt          DateTime?
+
+  documents          Document[]
+  conversations      AIConversation[]
+  summaries          Summary[]
+  quizzes            Quiz[]
+  questionAnalyses   QuestionAnalysis[]
+  searchHistories    SearchHistory[]
+  createdSubjects    Subject[]
+  importantTopics    ImportantTopic[]
+
+  @@index([email])
+}
+
+model Subject {
+  id          String   @id @default(uuid())
+  userId      String?
+  name        String
+  semester    String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  chapters        Chapter[]
+  documents       Document[]
+  quizzes         Quiz[]
+  importantTopics ImportantTopic[]
+
+  @@index([name])
+  @@index([userId])
+}
+
+model Chapter {
+  id          String   @id @default(uuid())
+  subjectId   String
+  number      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@index([subjectId])
+}
+
+model Document {
+  id                  String    @id @default(uuid())
+  userId              String
+  subjectId           String?
+  chapterId           String?
+  fileName            String
+  originalName        String
+  fileUrl             String
+  storagePath         String?
+  fileSize            Int
+  pageCount           Int       @default(0)
+  documentType        String    @default("StudyMaterial") // StudyMaterial, PreviousPaper, Notes
+  processingStatus    String    @default("Uploaded")      // Uploaded, Processing, Ready, Failed
+  processingStage     String    @default("Uploaded")      // ExtractingText, Chunking, GeneratingSummary, AnalyzingQuestions, Ready, Failed
+  title               String?
+  author              String?
+  language            String?   @default("en")
+  extractedTextLength Int       @default(0)
+  materialName        String?
+  materialType        String?
+  description         String?
+  summary             String?
+  topicsJson          String?   // JSON array of topics
+  keyConceptsJson     String?   // JSON array of key concepts
+  importantPointsJson String?   // JSON array of important points
+  confidenceJson      String?   // JSON metadata confidence
+  processingError     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  isDeleted           Boolean   @default(false)
+  deletedAt           DateTime?
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject          Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  chapter          Chapter?           @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  chunks           DocumentChunk[]
+  summaries        Summary[]
+  questionAnalyses QuestionAnalysis[]
+  quizzes          Quiz[]
+
+  @@index([userId])
+  @@index([subjectId])
+  @@index([documentType])
+  @@index([processingStatus])
+}
+
+model DocumentChunk {
+  id                 String                       @id @default(uuid())
+  documentId         String
+  chunkIndex         Int
+  chunkText          String
+  pageNumber         Int                          @default(1)
+  sectionRef         String?                      // e.g. "Page 4", "Section 2", "Slide 1"
+  embeddingModel     String?                      // e.g. "text-embedding-3-small"
+  embeddingGenerated Boolean                      @default(false)
+  embeddingJson      String?                      // Portable serialized embedding vector
+  embedding          Unsupported("vector(1536)")? // Supabase pgvector column
+  createdAt          DateTime                     @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([chunkIndex])
+}
+
+model AIConversation {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String   @default("Study Discussion")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIMessage[]
+
+  @@index([userId])
+}
+
+model AIMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  documentId     String?
+  role           String   // user, assistant, system
+  message        String
+  sourceCitation String?
+  citationsJson  String?  // JSON array: [{ documentId, documentName, pageNumber, excerpt }]
+  pageNumber     Int?
+  confidence     Float    @default(0.9)
+  createdAt      DateTime @default(now())
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([userId])
+}
+
+model Summary {
+  id          String   @id @default(uuid())
+  userId      String
+  documentId  String
+  summaryType String   // Short, Detailed
+  content     String
+  aiProvider  String   @default("Gemini")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([userId])
+}
+
+model Quiz {
+  id            String   @id @default(uuid())
+  userId        String
+  subjectId     String?
+  documentId    String?
+  title         String
+  difficulty    String   @default("Medium") // Easy, Medium, Hard
+  questionCount Int      @default(5)
+  score         Float?
+  createdAt     DateTime @default(now())
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   Subject?       @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  document  Document?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  questions QuizQuestion[]
+
+  @@index([userId])
+  @@index([subjectId])
+}
+
+model QuizQuestion {
+  id             String  @id @default(uuid())
+  quizId         String
+  question       String
+  options        String  // JSON array or serialized options
+  optionA        String
+  optionB        String
+  optionC        String
+  optionD        String
+  correctAnswer  String  // A, B, C, D
+  explanation    String
+  questionOrder  Int     @default(0)
+  selectedOption String?
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+}
+
+model QuestionAnalysis {
+  id                 String   @id @default(uuid())
+  userId             String
+  analysisGroupId    String?
+  documentId         String
+  repeatedQuestions  String   // JSON array string
+  repeatedTopics     String   // JSON array string
+  highWeightageUnits String   // JSON array string
+  topicFrequency     String   // JSON object string
+  analysisJson       String   // Full analysis JSON
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([userId])
+  @@index([analysisGroupId])
+}
+
+model ImportantTopic {
+  id                   String   @id @default(uuid())
+  userId               String?
+  analysisGroupId      String?
+  subjectId            String?
+  topic                String
+  frequency            Int      @default(1)
+  importanceLevel      String   @default("Medium") // High, Medium, Low
+  supportingDocumentIds String? // JSON array string
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId])
+  @@index([topic])
+}
+
+model SearchHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  keyword   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model JobQueue {
+  id          String    @id @default(uuid())
+  type        String    // PROCESS_DOCUMENT
+  payload     String    // JSON string
+  status      String    @default("pending") // pending, processing, completed, failed
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  error       String?
+  scheduledAt DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+}
