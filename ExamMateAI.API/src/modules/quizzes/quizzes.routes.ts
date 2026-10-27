@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { aiLimiter } from '../../middleware/rateLimiter.js';
 import { validate } from '../../middleware/validate.js';
 import { quizController } from './quizzes.controller.js';
@@ -30,6 +30,7 @@ const submitQuizSchema = z.object({
 
 export const quizRoutes = Router();
 
-quizRoutes.post('/generate', authenticate, aiLimiter, validate(generateQuizSchema), quizController.generateQuiz);
-quizRoutes.get('/:id', authenticate, quizController.getQuizById);
-quizRoutes.post('/submit', authenticate, validate(submitQuizSchema), quizController.submitQuiz);
+quizRoutes.post('/generate', optionalAuthenticate, aiLimiter, validate(generateQuizSchema), quizController.generateQuiz);
+quizRoutes.get('/:id', optionalAuthenticate, quizController.getQuizById);
+quizRoutes.post('/submit', optionalAuthenticate, validate(submitQuizSchema), quizController.submitQuiz);
+

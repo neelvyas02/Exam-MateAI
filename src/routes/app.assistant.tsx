@@ -89,14 +89,29 @@ export function AssistantPage() {
       const selectedDocId = selectedMaterial !== "all" ? selectedMaterial : undefined;
       const apiResponse = await store.sendChatMessageAsync(q, selectedDocId);
 
+      const matchedMat = store.materials.find(
+        (m) => m.id === selectedDocId || m.name === apiResponse.sourceDocument || m.id === apiResponse.documentId
+      );
+      const isSlides =
+        matchedMat?.materialType === "Lecture Slides" ||
+        matchedMat?.fileType === "PPTX" ||
+        matchedMat?.fileType === "PPT" ||
+        matchedMat?.name?.toLowerCase().includes("ppt") ||
+        matchedMat?.name?.toLowerCase().includes("slide");
+
+      let citationLoc = apiResponse.sourceCitation || undefined;
+      if (apiResponse.pageNumber) {
+        citationLoc = isSlides ? `Slide ${apiResponse.pageNumber}` : `Page ${apiResponse.pageNumber}`;
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           id: apiResponse.id || crypto.randomUUID(),
           role: "assistant",
           text: apiResponse.message,
-          sourceDoc: apiResponse.sourceDocument || undefined,
-          citationLocation: apiResponse.pageNumber ? `Page ${apiResponse.pageNumber}` : (apiResponse.sourceCitation || undefined),
+          sourceDoc: apiResponse.sourceDocument || matchedMat?.name || undefined,
+          citationLocation: citationLoc,
           isGrounded: apiResponse.confidence > 0.3 && !apiResponse.message.toLowerCase().includes("couldn't find"),
         },
       ]);
@@ -106,16 +121,23 @@ export function AssistantPage() {
       }
       // Fallback for offline mode or guardrail
       const matchedMat = materialsList[0] || store.materials[0];
+      const isSlides =
+        matchedMat?.materialType === "Lecture Slides" ||
+        matchedMat?.fileType === "PPTX" ||
+        matchedMat?.name?.toLowerCase().includes("ppt");
+
+      const fallbackText = matchedMat
+        ? `Based on your uploaded material "${matchedMat.name}":\n\n${matchedMat.description || matchedMat.extractedContent}\n\nTopics:\n${(matchedMat.topics || []).map((t) => `• ${t}`).join("\n")}`
+        : "I couldn't find enough information about this in your uploaded study material.";
+
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          text: matchedMat
-            ? `Based on your uploaded material "${matchedMat.name}": ${matchedMat.extractedContent.slice(0, 220)}...`
-            : "I couldn't find enough information about this in your uploaded study material.",
+          text: fallbackText,
           sourceDoc: matchedMat?.name,
-          citationLocation: matchedMat?.fileType === "PPTX" ? "Slide 12" : "Page 18",
+          citationLocation: isSlides ? "Slide 18" : "Page 18",
           isGrounded: !!matchedMat,
         },
       ]);

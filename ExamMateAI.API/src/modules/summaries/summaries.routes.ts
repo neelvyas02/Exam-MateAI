@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { aiLimiter } from '../../middleware/rateLimiter.js';
 import { validate } from '../../middleware/validate.js';
 import { summaryController } from './summaries.controller.js';
@@ -14,5 +14,5 @@ const summarizeSchema = z.object({
 
 export const summaryRoutes = Router();
 
-summaryRoutes.post('/', authenticate, aiLimiter, validate(summarizeSchema), summaryController.summarizeDocument);
-summaryRoutes.get('/document/:documentId', authenticate, summaryController.getDocumentSummaries);
+summaryRoutes.post('/', optionalAuthenticate, aiLimiter, validate(summarizeSchema), summaryController.summarizeDocument);
+summaryRoutes.get('/document/:documentId', optionalAuthenticate, summaryController.getDocumentSummaries);

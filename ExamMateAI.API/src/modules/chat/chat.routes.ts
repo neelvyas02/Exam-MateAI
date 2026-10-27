@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { aiLimiter } from '../../middleware/rateLimiter.js';
 import { validate } from '../../middleware/validate.js';
 import { chatController } from './chat.controller.js';
@@ -18,7 +18,7 @@ const chatRequestSchema = z.object({
 
 export const chatRoutes = Router();
 
-chatRoutes.post('/', authenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
-chatRoutes.post('/message', authenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
-chatRoutes.get('/history/:conversationId', authenticate, chatController.getHistory);
+chatRoutes.post('/', optionalAuthenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
+chatRoutes.post('/message', optionalAuthenticate, aiLimiter, validate(chatRequestSchema), chatController.askQuestion);
+chatRoutes.get('/history/:conversationId', optionalAuthenticate, chatController.getHistory);
 

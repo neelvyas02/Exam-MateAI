@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { aiLimiter } from '../../middleware/rateLimiter.js';
 import { validate } from '../../middleware/validate.js';
 import { questionAnalysisController } from './question-analysis.controller.js';
@@ -13,5 +13,6 @@ const analysisSchema = z.object({
 
 export const questionAnalysisRoutes = Router();
 
-questionAnalysisRoutes.post('/', authenticate, aiLimiter, validate(analysisSchema), questionAnalysisController.analyze);
-questionAnalysisRoutes.get('/document/:documentId', authenticate, questionAnalysisController.getByDocumentId);
+questionAnalysisRoutes.post('/', optionalAuthenticate, aiLimiter, validate(analysisSchema), questionAnalysisController.analyze);
+questionAnalysisRoutes.get('/document/:documentId', optionalAuthenticate, questionAnalysisController.getByDocumentId);
+

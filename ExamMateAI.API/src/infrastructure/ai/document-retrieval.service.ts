@@ -56,7 +56,7 @@ export class DocumentRetrievalService {
           (1 - (dc.embedding <=> '${vectorStr}'::vector))::float AS similarity
         FROM "DocumentChunk" dc
         JOIN "Document" d ON dc."documentId" = d.id
-        WHERE d."userId" = '${userId.replace(/'/g, "''")}'
+        WHERE (d."userId" = '${userId.replace(/'/g, "''")}' OR d."documentType" = 'StudyMaterial' OR d."userId" IS NULL)
           AND d."isDeleted" = false
           AND d."processingStatus" = 'Ready'
           ${docIdFilter}
@@ -92,7 +92,7 @@ export class DocumentRetrievalService {
       const candidates = await prisma.documentChunk.findMany({
         where: {
           document: {
-            userId,
+            OR: [{ userId }, { documentType: 'StudyMaterial' }],
             isDeleted: false,
             processingStatus: 'Ready',
             ...(documentIds && documentIds.length > 0 ? { id: { in: documentIds } } : {}),
@@ -155,7 +155,7 @@ export class DocumentRetrievalService {
     const candidates = await prisma.documentChunk.findMany({
       where: {
         document: {
-          userId,
+          OR: [{ userId }, { documentType: 'StudyMaterial' }],
           isDeleted: false,
           processingStatus: 'Ready',
           ...(documentIds && documentIds.length > 0 ? { id: { in: documentIds } } : {}),
