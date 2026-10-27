@@ -23,7 +23,7 @@ export class SubjectsController {
 
   public async createSubject(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const userId = req.user?.id || null;
       const subject = await subjectService.createSubject(userId, req.body);
       res.status(201).json(ApiResponseHelper.success(subject, 'Subject created successfully.'));
     } catch (err) {

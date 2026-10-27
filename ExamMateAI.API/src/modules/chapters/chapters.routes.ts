@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { chaptersController } from './chapters.controller.js';
 
@@ -23,8 +23,8 @@ const updateChapterSchema = z.object({
 
 export const chaptersRoutes = Router();
 
-chaptersRoutes.get('/', authenticate, chaptersController.getChapters);
-chaptersRoutes.get('/:id', authenticate, chaptersController.getChapterById);
-chaptersRoutes.post('/', authenticate, validate(createChapterSchema), chaptersController.createChapter);
+chaptersRoutes.get('/', optionalAuthenticate, chaptersController.getChapters);
+chaptersRoutes.get('/:id', optionalAuthenticate, chaptersController.getChapterById);
+chaptersRoutes.post('/', optionalAuthenticate, validate(createChapterSchema), chaptersController.createChapter);
 chaptersRoutes.put('/:id', authenticate, validate(updateChapterSchema), chaptersController.updateChapter);
 chaptersRoutes.delete('/:id', authenticate, chaptersController.deleteChapter);

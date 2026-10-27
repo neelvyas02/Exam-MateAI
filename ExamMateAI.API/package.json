@@ -1,6 +1,7 @@
 {
   "name": "exammate-ai-api",
   "version": "1.0.0",
+  "type": "module",
   "description": "ExamMate AI — Intelligent Question Paper Analysis and Study Assistant Node.js/Express Backend",
   "main": "dist/server.js",
   "scripts": {

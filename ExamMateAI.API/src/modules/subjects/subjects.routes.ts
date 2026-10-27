@@ -24,6 +24,6 @@ export const subjectsRoutes = Router();
 
 subjectsRoutes.get('/', optionalAuthenticate, subjectsController.getSubjects);
 subjectsRoutes.get('/:id', optionalAuthenticate, subjectsController.getSubjectById);
-subjectsRoutes.post('/', authenticate, validate(createSubjectSchema), subjectsController.createSubject);
+subjectsRoutes.post('/', optionalAuthenticate, validate(createSubjectSchema), subjectsController.createSubject);
 subjectsRoutes.put('/:id', authenticate, validate(updateSubjectSchema), subjectsController.updateSubject);
 subjectsRoutes.delete('/:id', authenticate, subjectsController.deleteSubject);

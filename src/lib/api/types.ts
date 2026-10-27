@@ -92,15 +92,14 @@ export interface UpdateSubjectDto {
   description?: string;
 }
 
-// Chapter DTOs
 export interface ChapterDto {
   id: string;
   subjectId: string;
-  subjectName: string;
+  subjectName?: string;
   number: string;
   name: string;
   description?: string | null;
-  documentCount: number;
+  documentCount?: number;
   createdAt: string;
 }
 

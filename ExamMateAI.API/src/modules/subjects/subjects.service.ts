@@ -61,7 +61,7 @@ export class SubjectService {
   }
 
   public async createSubject(
-    userId: string,
+    userId: string | null,
     data: { name: string; semester?: string; description?: string }
   ): Promise<SubjectDto> {
     const subject = await prisma.subject.create({
@@ -69,7 +69,7 @@ export class SubjectService {
         name: data.name,
         semester: data.semester || '',
         description: data.description,
-        userId,
+        userId: userId || undefined,
       },
     });
 

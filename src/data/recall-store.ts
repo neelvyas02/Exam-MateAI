@@ -496,12 +496,76 @@ import {
   SearchResponseDto,
 } from "@/lib/api";
 
+export const defaultSubjects: SubjectDto[] = [
+  {
+    id: "5aaeaabf-649d-4067-b4e7-967002faab52",
+    name: "Computer Networks",
+    semester: "Semester 5",
+    description: "Foundations of computer networking, OSI model, TCP/IP, and routing protocols.",
+    documentCount: 0,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "71054229-3e39-4611-83f1-6ed6f9b2728a",
+    name: "Database Management Systems",
+    semester: "Semester 4",
+    description: "Relational database concepts, SQL, normalization, and transaction processing.",
+    documentCount: 0,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "4e8c0bb7-38e0-4042-b778-37887677d917",
+    name: "Operating Systems",
+    semester: "Semester 4",
+    description: "OS architecture, processes, threads, CPU scheduling, memory management, and file systems.",
+    documentCount: 0,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "subj-ai",
+    name: "Artificial Intelligence",
+    semester: "Semester 6",
+    description: "Intelligent agents, problem formulations, search algorithms, and knowledge representation.",
+    documentCount: 1,
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const defaultChapters: ChapterDto[] = [
+  { id: "3332a064-e093-4df9-921b-ec0232f5c5e2", subjectId: "5aaeaabf-649d-4067-b4e7-967002faab52", subjectName: "Computer Networks", number: "1", name: "Introduction to Networking & Physical Layer", createdAt: new Date().toISOString() },
+  { id: "851e59af-c61c-4bf7-a720-dd635f1f45af", subjectId: "5aaeaabf-649d-4067-b4e7-967002faab52", subjectName: "Computer Networks", number: "2", name: "Data Link Layer & MAC Protocols", createdAt: new Date().toISOString() },
+  { id: "ad20b730-12bc-4292-9985-101d678f8bcd", subjectId: "5aaeaabf-649d-4067-b4e7-967002faab52", subjectName: "Computer Networks", number: "3", name: "Network Layer & IP Routing", createdAt: new Date().toISOString() },
+  { id: "4efb7c69-fa16-47ff-9f0e-99af3b6f3dc2", subjectId: "5aaeaabf-649d-4067-b4e7-967002faab52", subjectName: "Computer Networks", number: "4", name: "Transport Layer (TCP/UDP)", createdAt: new Date().toISOString() },
+
+  { id: "chap-dbms-1", subjectId: "71054229-3e39-4611-83f1-6ed6f9b2728a", subjectName: "Database Management Systems", number: "1", name: "Relational Model & Relational Algebra", createdAt: new Date().toISOString() },
+  { id: "chap-dbms-2", subjectId: "71054229-3e39-4611-83f1-6ed6f9b2728a", subjectName: "Database Management Systems", number: "2", name: "SQL & Advanced Querying", createdAt: new Date().toISOString() },
+  { id: "chap-dbms-3", subjectId: "71054229-3e39-4611-83f1-6ed6f9b2728a", subjectName: "Database Management Systems", number: "3", name: "Database Normalization", createdAt: new Date().toISOString() },
+  { id: "chap-dbms-4", subjectId: "71054229-3e39-4611-83f1-6ed6f9b2728a", subjectName: "Database Management Systems", number: "4", name: "Transaction Management & Concurrency Control", createdAt: new Date().toISOString() },
+
+  { id: "chap-os-1", subjectId: "4e8c0bb7-38e0-4042-b778-37887677d917", subjectName: "Operating Systems", number: "1", name: "Process Management & Synchronization", createdAt: new Date().toISOString() },
+  { id: "chap-os-2", subjectId: "4e8c0bb7-38e0-4042-b778-37887677d917", subjectName: "Operating Systems", number: "2", name: "CPU Scheduling Algorithms", createdAt: new Date().toISOString() },
+  { id: "chap-os-3", subjectId: "4e8c0bb7-38e0-4042-b778-37887677d917", subjectName: "Operating Systems", number: "3", name: "Memory Management & Virtual Memory", createdAt: new Date().toISOString() },
+  { id: "chap-os-4", subjectId: "4e8c0bb7-38e0-4042-b778-37887677d917", subjectName: "Operating Systems", number: "4", name: "File Systems & Storage Management", createdAt: new Date().toISOString() },
+
+  { id: "chap-ai-1", subjectId: "subj-ai", subjectName: "Artificial Intelligence", number: "01", name: "Introduction to AI", createdAt: new Date().toISOString() },
+  { id: "chap-ai-2", subjectId: "subj-ai", subjectName: "Artificial Intelligence", number: "02", name: "Intelligent Agents & Search", createdAt: new Date().toISOString() },
+  { id: "chap-ai-3", subjectId: "subj-ai", subjectName: "Artificial Intelligence", number: "03", name: "Knowledge Representation & NLP", createdAt: new Date().toISOString() },
+];
+
 // Reactive Store State Hook
 export function useRecallStore() {
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
   const [backendLoading, setBackendLoading] = useState<boolean>(false);
-  const [subjects, setSubjects] = useState<SubjectDto[]>([]);
-  const [chapters, setChapters] = useState<ChapterDto[]>([]);
+  const [subjects, setSubjects] = useState<SubjectDto[]>(() => {
+    if (typeof window === "undefined") return defaultSubjects;
+    const saved = localStorage.getItem("recall_subjects");
+    return saved ? JSON.parse(saved) : defaultSubjects;
+  });
+  const [chapters, setChapters] = useState<ChapterDto[]>(() => {
+    if (typeof window === "undefined") return defaultChapters;
+    const saved = localStorage.getItem("recall_chapters");
+    return saved ? JSON.parse(saved) : defaultChapters;
+  });
 
   const [materials, setMaterials] = useState<StudyMaterialItem[]>(() => {
     if (typeof window === "undefined") return initialMaterials;
@@ -636,6 +700,18 @@ export function useRecallStore() {
   // Sync to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
+      localStorage.setItem("recall_subjects", JSON.stringify(subjects));
+    }
+  }, [subjects]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("recall_chapters", JSON.stringify(chapters));
+    }
+  }, [chapters]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
       localStorage.setItem("recall_materials", JSON.stringify(materials));
     }
   }, [materials]);
@@ -662,9 +738,26 @@ export function useRecallStore() {
   const createSubjectAsync = async (name: string, semester: string, description?: string): Promise<SubjectDto> => {
     setBackendLoading(true);
     try {
-      const newSubject = await subjectsApi.createSubject({ name, semester, description });
-      setSubjects((prev) => [...prev, newSubject]);
-      return newSubject;
+      try {
+        const newSubject = await subjectsApi.createSubject({ name, semester, description });
+        setSubjects((prev) => {
+          const filtered = prev.filter((s) => s.id !== newSubject.id && s.name.toLowerCase() !== newSubject.name.toLowerCase());
+          return [...filtered, newSubject];
+        });
+        return newSubject;
+      } catch (err: any) {
+        console.warn("Backend subject creation failed, keeping local subject:", err);
+        const localSubject: SubjectDto = {
+          id: `subj-${Date.now()}`,
+          name,
+          semester: semester || "Semester 6",
+          description: description || "",
+          documentCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+        setSubjects((prev) => [...prev, localSubject]);
+        return localSubject;
+      }
     } finally {
       setBackendLoading(false);
     }
@@ -674,9 +767,25 @@ export function useRecallStore() {
   const createChapterAsync = async (subjectId: string, number: string, name: string, description?: string): Promise<ChapterDto> => {
     setBackendLoading(true);
     try {
-      const newChapter = await chaptersApi.createChapter({ subjectId, number, name, description });
-      setChapters((prev) => [...prev, newChapter]);
-      return newChapter;
+      try {
+        const newChapter = await chaptersApi.createChapter({ subjectId, number, name, description });
+        setChapters((prev) => [...prev, newChapter]);
+        return newChapter;
+      } catch (err: any) {
+        const matchingSubj = subjects.find((s) => s.id === subjectId);
+        const localChapter: ChapterDto = {
+          id: `chap-${Date.now()}`,
+          subjectId,
+          subjectName: matchingSubj?.name || "Subject",
+          number,
+          name,
+          description: description || "",
+          documentCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+        setChapters((prev) => [...prev, localChapter]);
+        return localChapter;
+      }
     } finally {
       setBackendLoading(false);
     }
@@ -686,11 +795,14 @@ export function useRecallStore() {
   const fetchChaptersForSubject = async (subjectId: string): Promise<ChapterDto[]> => {
     try {
       const subjectChapters = await chaptersApi.getChapters(subjectId);
-      setChapters((prev) => {
-        const others = prev.filter((c) => c.subjectId !== subjectId);
-        return [...others, ...subjectChapters];
-      });
-      return subjectChapters;
+      if (subjectChapters && subjectChapters.length > 0) {
+        setChapters((prev) => {
+          const others = prev.filter((c) => c.subjectId !== subjectId);
+          return [...others, ...subjectChapters];
+        });
+        return subjectChapters;
+      }
+      return chapters.filter((c) => c.subjectId === subjectId);
     } catch {
       return chapters.filter((c) => c.subjectId === subjectId);
     }

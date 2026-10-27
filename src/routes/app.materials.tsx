@@ -92,27 +92,32 @@ export function LibraryPage() {
   const subjectsList = Object.keys(subjectsMap);
 
   // Step 1: User selects a file -> DO NOT upload immediately, open Add Study Material dialog
-  const handleSelectFiles = (files: File[]) => {
+  const handleSelectFiles = async (files: File[]) => {
     if (files.length === 0) return;
     const file = files[0];
     setPendingFile(file);
 
     // If there is already an active/selected subject in the view, default to it
+    let chosenSubjId = "";
     const matchedSubject = store.subjects.find((s) => s.name === selectedSubject);
     if (matchedSubject) {
-      setSelectedSubjectId(matchedSubject.id);
-      const subjectChapters = store.chapters.filter((c) => c.subjectId === matchedSubject.id);
-      if (subjectChapters.length > 0) {
-        setSelectedChapterId(subjectChapters[0].id);
-      }
+      chosenSubjId = matchedSubject.id;
     } else if (store.subjects.length > 0) {
-      setSelectedSubjectId(store.subjects[0].id);
-      const subjectChapters = store.chapters.filter((c) => c.subjectId === store.subjects[0].id);
-      if (subjectChapters.length > 0) {
-        setSelectedChapterId(subjectChapters[0].id);
+      chosenSubjId = store.subjects[0].id;
+    }
+
+    if (chosenSubjId) {
+      setSelectedSubjectId(chosenSubjId);
+      const chaps = await store.fetchChaptersForSubject(chosenSubjId);
+      if (chaps && chaps.length > 0) {
+        setSelectedChapterId(chaps[0].id);
       } else {
-        setSelectedChapterId("");
+        const localChaps = store.chapters.filter((c) => c.subjectId === chosenSubjId);
+        setSelectedChapterId(localChaps.length > 0 ? localChaps[0].id : "");
       }
+    } else {
+      setSelectedSubjectId("");
+      setSelectedChapterId("");
     }
   };
 
@@ -122,10 +127,14 @@ export function LibraryPage() {
   const handleSubjectChange = async (subjectId: string) => {
     setSelectedSubjectId(subjectId);
     setSelectedChapterId("");
-    await store.fetchChaptersForSubject(subjectId);
-    const updatedChapters = store.chapters.filter((c) => c.subjectId === subjectId);
-    if (updatedChapters.length > 0) {
-      setSelectedChapterId(updatedChapters[0].id);
+    const fetchedChapters = await store.fetchChaptersForSubject(subjectId);
+    if (fetchedChapters && fetchedChapters.length > 0) {
+      setSelectedChapterId(fetchedChapters[0].id);
+    } else {
+      const localChaps = store.chapters.filter((c) => c.subjectId === subjectId);
+      if (localChaps.length > 0) {
+        setSelectedChapterId(localChaps[0].id);
+      }
     }
   };
 
@@ -141,7 +150,13 @@ export function LibraryPage() {
       setSelectedSubjectId(created.id);
       setNewSubjectName("");
       setShowAddSubjectForm(false);
-      toast.success(`Added subject: ${created.name}`);
+      toast.success(`Subject "${created.name}" ready!`);
+      const chaps = await store.fetchChaptersForSubject(created.id);
+      if (chaps && chaps.length > 0) {
+        setSelectedChapterId(chaps[0].id);
+      } else {
+        setSelectedChapterId("");
+      }
     } catch (err: any) {
       toast.error(err.message || "Failed to create subject");
     } finally {
@@ -499,14 +514,14 @@ export function LibraryPage() {
                     </div>
                   </div>
                 ) : (
-                  <Select value={selectedSubjectId} onValueChange={handleSubjectChange}>
-                    <SelectTrigger className="w-full h-10 rounded-none border-border bg-background text-xs">
+                  <Select value={selectedSubjectId || undefined} onValueChange={handleSubjectChange}>
+                    <SelectTrigger className="w-full h-10 rounded-none border-border bg-background text-xs cursor-pointer">
                       <SelectValue placeholder="Select Subject ▼" />
                     </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
+                    <SelectContent className="bg-card border-border z-[60]">
                       {store.subjects.map((subj) => (
-                        <SelectItem key={subj.id} value={subj.id} className="text-xs">
-                          {subj.name} ({subj.semester})
+                        <SelectItem key={subj.id} value={subj.id} className="text-xs cursor-pointer">
+                          {subj.name} {subj.semester ? `(${subj.semester})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -582,11 +597,11 @@ export function LibraryPage() {
                   </div>
                 ) : (
                   <Select
-                    value={selectedChapterId}
+                    value={selectedChapterId || undefined}
                     onValueChange={setSelectedChapterId}
                     disabled={!selectedSubjectId || availableChapters.length === 0}
                   >
-                    <SelectTrigger className="w-full h-10 rounded-none border-border bg-background text-xs">
+                    <SelectTrigger className="w-full h-10 rounded-none border-border bg-background text-xs cursor-pointer">
                       <SelectValue
                         placeholder={
                           !selectedSubjectId
@@ -597,9 +612,9 @@ export function LibraryPage() {
                         }
                       />
                     </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
+                    <SelectContent className="bg-card border-border z-[60]">
                       {availableChapters.map((chap) => (
-                        <SelectItem key={chap.id} value={chap.id} className="text-xs">
+                        <SelectItem key={chap.id} value={chap.id} className="text-xs cursor-pointer">
                           {chap.name.startsWith("Unit") || chap.name.startsWith("Chapter")
                             ? chap.name
                             : `Unit ${chap.number} — ${chap.name}`}
