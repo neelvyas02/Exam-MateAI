@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { config } from '../../config/index.js';
 import { logger } from '../logging/logger.js';
 
 declare global {
@@ -6,9 +7,24 @@ declare global {
   var prismaClientGlobal: PrismaClient | undefined;
 }
 
+// Mask sensitive credentials for safe logging
+const getMaskedDbHost = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.username}:***@${parsed.host}${parsed.pathname}`;
+  } catch {
+    return 'configured DATABASE_URL';
+  }
+};
+
 export const prisma =
   global.prismaClientGlobal ||
   new PrismaClient({
+    datasources: {
+      db: {
+        url: config.databaseUrl,
+      },
+    },
     log: [
       { emit: 'event', level: 'error' },
       { emit: 'event', level: 'warn' },
@@ -28,12 +44,13 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 export async function testDatabaseConnection(): Promise<boolean> {
+  const target = getMaskedDbHost(config.databaseUrl);
   try {
     await prisma.$queryRaw`SELECT 1`;
-    logger.info('[Database] Successfully connected to PostgreSQL database.');
+    logger.info(`[Database] Successfully connected to PostgreSQL database at ${target}`);
     return true;
   } catch (err: any) {
-    logger.warn({ error: err.message }, '[Database Warning] PostgreSQL connection check failed. Ensure DATABASE_URL is reachable.');
+    logger.warn({ error: err.message, target }, '[Database Warning] PostgreSQL connection check failed. Ensure DATABASE_URL is reachable.');
     return false;
   }
 }

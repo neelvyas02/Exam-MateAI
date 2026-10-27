@@ -1,6 +1,13 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load environment variables
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Explicitly load .env from the ExamMateAI.API root directory
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// Also load any ambient environment variables
 dotenv.config();
 
 export interface AppConfig {
@@ -52,7 +59,7 @@ export const config: AppConfig = {
   port: parseInt(process.env.PORT || '5137', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: getCorsOrigins(process.env.CORS_ORIGIN || process.env.FRONTEND_URL),
-  databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/exammate_db?schema=public',
+  databaseUrl: process.env.DATABASE_URL || '',
   jwt: {
     secret: process.env.JWT_SECRET || 'ExamMateAI_Super_Secret_Key_For_JWT_Authentication_2026_Minimum_256_Bits!',
     expiresIn: process.env.JWT_EXPIRES_IN || '2h',
