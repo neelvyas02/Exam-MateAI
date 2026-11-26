@@ -5,10 +5,14 @@ import { chatService } from './chat.service.js';
 
 async function resolveUserId(req: Request): Promise<string> {
   if (req.user?.id) return req.user.id;
-  const student = await prisma.user.findFirst({ where: { role: 'Student' } });
-  if (student) return student.id;
-  const firstUser = await prisma.user.findFirst();
-  return firstUser ? firstUser.id : 'demo-student';
+  try {
+    const student = await prisma.user.findFirst({ where: { role: 'Student' } });
+    if (student) return student.id;
+    const firstUser = await prisma.user.findFirst();
+    return firstUser ? firstUser.id : 'demo-student';
+  } catch {
+    return 'demo-student';
+  }
 }
 
 export class ChatController {

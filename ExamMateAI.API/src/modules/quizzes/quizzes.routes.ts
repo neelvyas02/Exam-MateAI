@@ -12,6 +12,7 @@ const generateQuizSchema = z.object({
     documentIds: z.array(z.string()).optional(),
     topic: z.string().optional(),
     difficulty: z.string().optional().default('Medium'),
+    questionType: z.enum(['MCQ', 'TrueFalse', 'Mixed']).optional().default('MCQ'),
     questionCount: z.number().int().min(1).max(20).optional().default(5),
   }),
 });
@@ -31,6 +32,8 @@ const submitQuizSchema = z.object({
 export const quizRoutes = Router();
 
 quizRoutes.post('/generate', optionalAuthenticate, aiLimiter, validate(generateQuizSchema), quizController.generateQuiz);
+quizRoutes.get('/history', optionalAuthenticate, quizController.getHistory);
 quizRoutes.get('/:id', optionalAuthenticate, quizController.getQuizById);
 quizRoutes.post('/submit', optionalAuthenticate, validate(submitQuizSchema), quizController.submitQuiz);
+
 

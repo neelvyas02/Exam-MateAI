@@ -201,11 +201,18 @@ export const documentsApi = {
 
 // 5. Analysis API Service
 export const analysisApi = {
-  async analyzePreviousPapers(paperIds: string[]): Promise<QuestionAnalysisDto> {
-    const res = await apiClient.post<QuestionAnalysisDto>("/analysis", {
+  async analyzePreviousPapers(paperIds: string[], subjectId?: string): Promise<QuestionAnalysisDto> {
+    const res = await apiClient.post<QuestionAnalysisDto>("/analysis/analyze", {
+      paperIds,
       previousPaperIds: paperIds,
+      subjectId,
     } as AnalysisRequestDto);
     return res.data!;
+  },
+
+  async getLatestAnalysis(subjectId?: string): Promise<QuestionAnalysisDto | null> {
+    const res = await apiClient.get<QuestionAnalysisDto | null>("/analysis/latest", subjectId ? { subjectId } : undefined);
+    return res.data || null;
   },
 
   async getAnalysisByDocumentId(documentId: string): Promise<QuestionAnalysisDto> {
@@ -216,8 +223,8 @@ export const analysisApi = {
 
 // 6. Chat API Service
 export const chatApi = {
-  async askQuestion(question: string, documentId?: string | null, conversationId?: string | null): Promise<ChatMessageDto> {
-    const dto: ChatRequestDto = { question, documentId, conversationId };
+  async askQuestion(question: string, documentId?: string | null, conversationId?: string | null, context?: string | null): Promise<ChatMessageDto> {
+    const dto: ChatRequestDto = { question, documentId, conversationId, context };
     const res = await apiClient.post<ChatMessageDto>("/chat", dto);
     return res.data!;
   },
@@ -257,12 +264,7 @@ export const summaryApi = {
 
 // 8. Quiz API Service
 export const quizApi = {
-  async generateQuiz(subjectId: string, difficulty: string = "Medium", questionCount: number = 5): Promise<QuizDto> {
-    const dto: GenerateQuizRequestDto = {
-      subjectId,
-      difficulty,
-      questionCount,
-    };
+  async generateQuiz(dto: GenerateQuizRequestDto): Promise<QuizDto> {
     const res = await apiClient.post<QuizDto>("/quiz/generate", dto);
     return res.data!;
   },
@@ -270,6 +272,11 @@ export const quizApi = {
   async getQuizById(id: string): Promise<QuizDto> {
     const res = await apiClient.get<QuizDto>(`/quiz/${id}`);
     return res.data!;
+  },
+
+  async getQuizHistory(): Promise<QuizDto[]> {
+    const res = await apiClient.get<QuizDto[]>("/quiz/history");
+    return res.data || [];
   },
 
   async submitQuiz(dto: SubmitQuizRequestDto): Promise<QuizResultDto> {

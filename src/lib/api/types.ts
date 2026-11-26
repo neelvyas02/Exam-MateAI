@@ -134,6 +134,7 @@ export interface DocumentDto {
   pageCount: number;
   documentType: string; // "StudyMaterial" or "PreviousPaper"
   status: string; // "Uploaded", "ExtractingText", "Chunking", "GeneratingSummary", "AnalyzingQuestions", "Ready", "Failed"
+  processingStatus?: string; // "Ready", "Processing", "Failed"
   statusMessage?: string | null;
   author?: string | null;
   title?: string | null;
@@ -148,9 +149,85 @@ export interface DocumentDto {
   uploadedAt: string;
 }
 
+// Detailed PYQ Analysis DTOs
+export interface ExtractedQuestionDto {
+  number: string;
+  text: string;
+  marks: number | "Not specified";
+  section?: string;
+  topic: string;
+  difficulty?: "Easy" | "Medium" | "Hard";
+  sourcePaper: string;
+  year: string | "Not specified";
+}
+
+export interface RepeatedQuestionGroupDto {
+  canonicalQuestion: string;
+  topic: string;
+  occurrencesCount: number;
+  similarityPercentage: number;
+  marks: number | "Not specified";
+  occurrences: Array<{
+    paperName: string;
+    year: string | "Not specified";
+    questionNumber: string;
+    exactMatch: boolean;
+    similarityScore: number;
+  }>;
+}
+
+export interface TopicFrequencyItemDto {
+  topic: string;
+  count: number;
+  totalMarks: number | "Not specified";
+  papers: string[];
+  priority: "High" | "Medium" | "Low";
+  rationale: string;
+}
+
+export interface PaperBreakdownItemDto {
+  paperName: string;
+  year: string | "Not specified";
+  totalMarks: number | "Not specified";
+  questionsCount: number;
+  topics: string[];
+  questions: ExtractedQuestionDto[];
+}
+
+export interface RevisionPlanItemDto {
+  step: number;
+  topic: string;
+  priority: "High" | "Medium" | "Low";
+  rationale: string;
+  suggestedAction: string;
+  paperReferences: string[];
+}
+
+export interface DetailedPaperAnalysisDto {
+  summary: {
+    papersProcessed: number;
+    totalQuestions: number;
+    topicsIdentified: number;
+    repeatedCount: number;
+  };
+  papers: PaperBreakdownItemDto[];
+  topicFrequency: TopicFrequencyItemDto[];
+  repeatedQuestions: RepeatedQuestionGroupDto[];
+  importantTopics: Array<{
+    topic: string;
+    frequency: number;
+    importanceLevel: "High" | "Medium" | "Low";
+    reasons: string[];
+    totalMarks: number | "Not specified";
+  }>;
+  revisionPlan: RevisionPlanItemDto[];
+}
+
 // Analysis DTOs
 export interface AnalysisRequestDto {
-  previousPaperIds: string[];
+  previousPaperIds?: string[];
+  paperIds?: string[];
+  subjectId?: string;
 }
 
 export interface QuestionAnalysisDto {
@@ -161,6 +238,7 @@ export interface QuestionAnalysisDto {
   highWeightageUnits: string[];
   questionFrequency: Record<string, number>;
   createdAt: string;
+  analysis?: DetailedPaperAnalysisDto;
 }
 
 // Chat DTOs
@@ -170,6 +248,7 @@ export interface ChatRequestDto {
   subjectId?: string | null;
   chapterId?: string | null;
   conversationId?: string | null;
+  context?: string | null;
 }
 
 export interface ChatMessageDto {
@@ -179,10 +258,23 @@ export interface ChatMessageDto {
   documentId?: string | null;
   role: "user" | "assistant" | "system" | string;
   message: string;
+  answer?: string;
   sourceDocument?: string | null;
   sourceCitation?: string | null;
   pageNumber?: number | null;
   confidence: number;
+  sources?: any[];
+  citations?: Array<{
+    documentId: string;
+    documentName: string;
+    pageNumber?: number;
+    pageDisplay: string;
+    topic: string;
+    excerpt: string;
+  }>;
+  groundingStatus?: string;
+  isGrounded?: boolean;
+  unverifiedContextUsed?: boolean;
   createdAt: string;
 }
 
@@ -206,8 +298,12 @@ export interface SummaryDto {
 
 // Quiz DTOs
 export interface GenerateQuizRequestDto {
-  subjectId: string;
-  difficulty?: "Easy" | "Medium" | "Hard" | string;
+  subjectId?: string;
+  documentId?: string;
+  documentIds?: string[];
+  topic?: string;
+  difficulty?: "Easy" | "Medium" | "Hard" | "Mixed" | string;
+  questionType?: "MCQ" | "TrueFalse" | "Mixed";
   questionCount?: number;
 }
 
@@ -225,6 +321,8 @@ export interface QuizQuestionDto {
   id: string;
   quizId: string;
   question: string;
+  questionType?: "MCQ" | "TrueFalse";
+  options?: string[];
   optionA: string;
   optionB: string;
   optionC: string;
@@ -232,6 +330,8 @@ export interface QuizQuestionDto {
   correctAnswer: string;
   explanation: string;
   selectedOption?: string | null;
+  sourceCitation?: string;
+  pageNumber?: number;
 }
 
 export interface QuizDto {
@@ -241,6 +341,8 @@ export interface QuizDto {
   subjectName: string;
   title: string;
   difficulty: string;
+  questionType?: string;
+  sourceDocName?: string;
   score?: number | null;
   totalQuestions: number;
   questions: QuizQuestionDto[];

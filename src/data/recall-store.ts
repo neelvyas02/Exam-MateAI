@@ -33,6 +33,7 @@ export type StudyMaterialItem = {
     chapterName?: string;
     materialType?: MaterialType;
   };
+  status?: string;
 };
 
 export type PYQQuestion = {
@@ -485,6 +486,8 @@ import {
   summaryApi,
   quizApi,
   searchApi,
+  DetailedPaperAnalysisDto,
+  GenerateQuizRequestDto,
   SubjectDto,
   ChapterDto,
   DocumentDto,
@@ -609,6 +612,12 @@ export function useRecallStore() {
     return saved ? JSON.parse(saved) : initialRecommendations;
   });
 
+  const [currentAnalysis, setCurrentAnalysis] = useState<DetailedPaperAnalysisDto | null>(() => {
+    if (typeof window === "undefined") return null;
+    const saved = localStorage.getItem("recall_current_analysis");
+    return saved ? JSON.parse(saved) : null;
+  });
+
   // Check health and load initial backend data
   useEffect(() => {
     let isMounted = true;
@@ -654,6 +663,7 @@ export function useRecallStore() {
                 uploadedAt: d.uploadedAt ? d.uploadedAt.split("T")[0] : new Date().toISOString().split("T")[0],
                 extractedContent: d.summary || d.title || "",
                 confidence: { subject: "high", chapter: "high", materialType: "high" },
+                status: d.status,
               }));
 
             const backendPapers: PYQPaper[] = userDocs
@@ -733,6 +743,14 @@ export function useRecallStore() {
       localStorage.setItem("recall_recommendations", JSON.stringify(recommendations));
     }
   }, [recommendations]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (currentAnalysis) {
+        localStorage.setItem("recall_current_analysis", JSON.stringify(currentAnalysis));
+      }
+    }
+  }, [currentAnalysis]);
 
   // Async Action: Create Subject
   const createSubjectAsync = async (name: string, semester: string, description?: string): Promise<SubjectDto> => {
@@ -864,33 +882,124 @@ export function useRecallStore() {
     }
   };
 
+  // Async Action: Refresh user materials and papers from backend
+  const refreshMaterialsAsync = async (): Promise<void> => {
+    try {
+      const userDocs = await documentsApi.getUserDocuments();
+      if (userDocs && userDocs.length > 0) {
+        const backendMaterials: StudyMaterialItem[] = userDocs
+          .filter((d) => d.documentType === "StudyMaterial" || d.documentType === "0")
+          .map((d) => ({
+            id: d.id,
+            name: d.materialName || d.originalName || d.fileName,
+            fileType: d.fileName.split(".").pop()?.toUpperCase() || "PDF",
+            fileSizeMb: Number((d.fileSize / (1024 * 1024)).toFixed(2)),
+            subject: d.subjectName || "General Subject",
+            chapterNumber: d.chapterNumber || "01",
+            chapterName: d.chapterName || "General Chapter",
+            materialType: (d.materialType as MaterialType) || "Study Notes",
+            description: d.description || d.statusMessage || "Uploaded study material",
+            topics: d.topics && d.topics.length > 0 ? d.topics : [d.subjectName],
+            pagesOrSlides: d.pageCount || 1,
+            uploadedAt: d.uploadedAt ? d.uploadedAt.split("T")[0] : new Date().toISOString().split("T")[0],
+            extractedContent: d.summary || d.title || "",
+            confidence: { subject: "high", chapter: "high", materialType: "high" },
+            status: d.status,
+          }));
+        setMaterials(backendMaterials);
+
+        const backendPapers: PYQPaper[] = userDocs
+          .filter((d) => d.documentType === "PreviousPaper" || d.documentType === "1")
+          .map((d) => ({
+            id: d.id,
+            name: d.originalName || d.fileName,
+            fileType: d.fileName.split(".").pop()?.toUpperCase() || "PDF",
+            subject: d.subjectName || "General Subject",
+            year: new Date().getFullYear().toString(),
+            uploadedAt: d.uploadedAt ? d.uploadedAt.split("T")[0] : new Date().toISOString().split("T")[0],
+            pages: d.pageCount || 1,
+            questionsCount: 5,
+          }));
+        setPapers(backendPapers);
+      }
+    } catch (err) {
+      console.warn("Could not refresh materials from backend:", err);
+    }
+  };
+
   // Async Action: Analyze Papers
-  const analyzePapersAsync = async (paperIds: string[]): Promise<QuestionAnalysisDto> => {
+  const analyzePapersAsync = async (
+    paperIds: string[],
+    subjectId?: string
+  ): Promise<QuestionAnalysisDto> => {
     setBackendLoading(true);
     try {
-      const result = await analysisApi.analyzePreviousPapers(paperIds);
-      if (result.repeatedQuestions && result.repeatedQuestions.length > 0) {
-        const newGroup: SimilarQuestionGroup = {
-          id: result.id,
-          canonicalQuestion: result.repeatedQuestions[0],
-          topic: result.repeatedTopics?.[0] || "General Topic",
-          similarityPercentage: 92,
-          occurrencesCount: result.repeatedQuestions.length,
-          years: ["2024", "2025"],
-          questions: result.repeatedQuestions.map((q, idx) => ({
-            id: `${result.id}_q${idx}`,
-            text: q,
-            type: "Descriptive",
-            topic: result.repeatedTopics?.[0] || "General Topic",
-            subtopic: "Analysis Result",
-            difficulty: "Medium",
-            paperId: paperIds[0] || result.documentId,
-            year: "2025",
-            subject: "Analysis Subject",
-          })),
-        };
-        setSimilarGroups((prev) => [newGroup, ...prev]);
+      const result = await analysisApi.analyzePreviousPapers(paperIds, subjectId);
+
+      if (result.analysis) {
+        setCurrentAnalysis(result.analysis);
+
+        // Update topic frequencies from actual PYQ analysis
+        if (result.analysis.topicFrequency && result.analysis.topicFrequency.length > 0) {
+          const newFrequencies: TopicFrequency[] = result.analysis.topicFrequency.map((tf) => ({
+            topic: tf.topic,
+            subject: subjectId ? (subjects.find((s) => s.id === subjectId)?.name || "Selected Subject") : "General Subject",
+            questionCount: tf.count,
+            totalMarks: typeof tf.totalMarks === "number" ? tf.totalMarks : tf.count * 10,
+            years: result.analysis?.papers.map((p) => p.year).filter((y) => y !== "Not specified") || ["2025"],
+            priority: tf.priority,
+            isHighWeightage: tf.priority === "High",
+            relatedMaterials: [],
+          }));
+          setTopicFrequencies(newFrequencies);
+        }
+
+        // Update similar / repeated questions
+        if (result.analysis.repeatedQuestions && result.analysis.repeatedQuestions.length > 0) {
+          const newGroups: SimilarQuestionGroup[] = result.analysis.repeatedQuestions.map((rq, idx) => ({
+            id: `rep_${idx}_${Date.now()}`,
+            canonicalQuestion: rq.canonicalQuestion,
+            topic: rq.topic,
+            similarityPercentage: rq.similarityPercentage || 90,
+            occurrencesCount: rq.occurrencesCount || rq.occurrences.length,
+            years: rq.occurrences.map((o) => o.year).filter(Boolean),
+            questions: rq.occurrences.map((occ, oIdx) => ({
+              id: `q_occ_${idx}_${oIdx}`,
+              text: `${occ.paperName} (${occ.year}): ${rq.canonicalQuestion}`,
+              type: "Descriptive",
+              topic: rq.topic,
+              subtopic: occ.questionNumber || "Question",
+              difficulty: "Medium",
+              paperId: paperIds[0] || result.documentId,
+              year: occ.year || "Not specified",
+              subject: "Analysis Subject",
+            })),
+          }));
+          setSimilarGroups(newGroups);
+        }
+
+        // Update extracted questions
+        if (result.analysis.papers && result.analysis.papers.length > 0) {
+          const allExtracted: PYQQuestion[] = result.analysis.papers.flatMap((p) =>
+            p.questions.map((q) => ({
+              id: `extracted_${Math.random().toString(36).substring(2, 9)}`,
+              text: q.text,
+              marks: typeof q.marks === "number" ? q.marks : 10,
+              type: "Descriptive" as const,
+              topic: q.topic || "General Topic",
+              subtopic: q.section || q.number || "Question",
+              difficulty: q.difficulty || "Medium",
+              paperId: paperIds[0] || result.documentId,
+              year: q.year || p.year || "Not specified",
+              subject: "Analyzed Subject",
+            }))
+          );
+          if (allExtracted.length > 0) {
+            setQuestions(allExtracted);
+          }
+        }
       }
+
       return result;
     } finally {
       setBackendLoading(false);
@@ -901,11 +1010,12 @@ export function useRecallStore() {
   const sendChatMessageAsync = async (
     question: string,
     documentId?: string | null,
-    conversationId?: string | null
+    conversationId?: string | null,
+    context?: string | null
   ): Promise<ChatMessageDto> => {
     setBackendLoading(true);
     try {
-      return await chatApi.askQuestion(question, documentId, conversationId);
+      return await chatApi.askQuestion(question, documentId, conversationId, context);
     } finally {
       setBackendLoading(false);
     }
@@ -926,13 +1036,25 @@ export function useRecallStore() {
 
   // Async Action: Generate Quiz
   const generateQuizAsync = async (
-    subjectId: string,
+    optionsOrSubjectId: string | GenerateQuizRequestDto,
     difficulty: string = "Medium",
-    questionCount: number = 5
+    questionCount: number = 5,
+    questionType: "MCQ" | "TrueFalse" | "Mixed" = "MCQ"
   ): Promise<QuizDto> => {
     setBackendLoading(true);
     try {
-      return await quizApi.generateQuiz(subjectId, difficulty, questionCount);
+      let dto: GenerateQuizRequestDto;
+      if (typeof optionsOrSubjectId === "object") {
+        dto = optionsOrSubjectId;
+      } else {
+        dto = {
+          subjectId: optionsOrSubjectId,
+          difficulty,
+          questionCount,
+          questionType,
+        };
+      }
+      return await quizApi.generateQuiz(dto);
     } finally {
       setBackendLoading(false);
     }
@@ -1041,11 +1163,14 @@ export function useRecallStore() {
     topicFrequencies,
     quizAttempts,
     recommendations,
+    currentAnalysis,
+    setCurrentAnalysis,
     readiness: calculateReadiness(),
     addMaterial,
     addPaper,
     recordQuizAttempt,
     uploadDocumentAsync,
+    refreshMaterialsAsync,
     createSubjectAsync,
     createChapterAsync,
     fetchChaptersForSubject,

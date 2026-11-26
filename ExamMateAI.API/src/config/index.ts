@@ -101,5 +101,13 @@ export function validateAIConfiguration(): { valid: boolean; message?: string } 
       };
     }
   }
+  if (config.ai.provider === 'gemini') {
+    if (!config.ai.geminiApiKey) {
+      return {
+        valid: false,
+        message: 'GEMINI_API_KEY is not configured in backend environment variables. Set GEMINI_API_KEY in .env to enable Gemini features.',
+      };
+    }
+  }
   return { valid: true };
 }

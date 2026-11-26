@@ -13,6 +13,7 @@ const chatRequestSchema = z.object({
     conversationId: z.string().nullable().optional(),
     subjectId: z.string().nullable().optional(),
     chapterId: z.string().nullable().optional(),
+    context: z.string().nullable().optional(),
   }),
 });
 

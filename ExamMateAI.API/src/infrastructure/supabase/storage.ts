@@ -118,6 +118,11 @@ export class SupabaseStorageService {
       return fs.readFileSync(localFilePath);
     }
 
+    const rawPath = path.join(this.localUploadsDir, filePath);
+    if (fs.existsSync(rawPath)) {
+      return fs.readFileSync(rawPath);
+    }
+
     throw new Error(`Document file '${filePath}' not found in storage.`);
   }
 

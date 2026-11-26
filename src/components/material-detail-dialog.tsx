@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { StudyMaterialItem } from "@/data/recall-store";
+import { MarkdownContent } from "@/components/markdown-content";
+import { StudyMaterialItem, useRecallStore } from "@/data/recall-store";
 
 export function MaterialDetailDialog({
   material,
@@ -40,38 +41,42 @@ export function MaterialDetailDialog({
     },
   ]);
 
+  const store = useRecallStore();
+
   if (!material) return null;
 
-  const handleSendChat = () => {
+  const handleSendChat = async () => {
     if (!chatInput.trim()) return;
     const userMsg = chatInput.trim();
     setChatMessages((prev) => [...prev, { role: "user", text: userMsg }]);
     setChatInput("");
 
-    setTimeout(() => {
-      // Grounded answer search simulation
-      if (
-        userMsg.toLowerCase().includes("quantum") ||
-        userMsg.toLowerCase().includes("blockchain") ||
-        userMsg.toLowerCase().includes("react native")
-      ) {
+    if (store.backendAvailable) {
+      try {
+        const res = await store.sendChatMessageAsync(userMsg, material.id);
         setChatMessages((prev) => [
           ...prev,
           {
             role: "ai",
-            text: "I couldn't find enough information about this in your uploaded study material.",
+            text: res.message,
+            citation: res.sourceCitation || `${material.name} · Verified`,
           },
         ]);
-      } else {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            role: "ai",
-            text: `Based on Section 3 of ${material.name}, ${material.extractedContent.slice(0, 180)}...`,
-            citation: `${material.name} · Page 18`,
-          },
-        ]);
+        return;
+      } catch {
+        // Continue to offline fallback
       }
+    }
+
+    setTimeout(() => {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: `Based on ${material.name}, ${material.description || material.extractedContent.slice(0, 180)}...`,
+          citation: `${material.name} · Page 1`,
+        },
+      ]);
     }, 600);
   };
 
@@ -252,7 +257,7 @@ export function MaterialDetailDialog({
                         : "bg-muted/30 border border-border text-foreground rounded-bl-none font-serif leading-[1.65]"
                     }`}
                   >
-                    <p>{msg.text}</p>
+                    <MarkdownContent content={msg.text} />
                     {msg.citation && (
                       <p className="mt-2 text-[11px] font-sans border-t border-border pt-1 font-semibold text-secondary flex items-center gap-1">
                         <FileText className="h-3 w-3" /> Source: {msg.citation}

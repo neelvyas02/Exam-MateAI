@@ -29,6 +29,14 @@ export class DatabaseDocumentQueue implements IJobQueue {
     });
 
     logger.info({ jobId: job.id, documentId: data.documentId }, '[DB Queue] Document processing job persisted in PostgreSQL.');
+
+    // Immediately trigger processing without waiting for 3s polling interval
+    setImmediate(() => {
+      import('../../workers/document-worker.js')
+        .then(({ documentWorker }) => documentWorker.processNextDbJob())
+        .catch(() => {});
+    });
+
     return job.id;
   }
 

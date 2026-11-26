@@ -32,6 +32,16 @@ export class QuizController {
     }
   }
 
+  public async getHistory(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = await resolveUserId(req);
+      const history = await quizService.getQuizHistory(userId);
+      res.status(200).json(ApiResponseHelper.success(history, 'Quiz history retrieved successfully.'));
+    } catch (err) {
+      next(err);
+    }
+  }
+
   public async submitQuiz(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = await resolveUserId(req);

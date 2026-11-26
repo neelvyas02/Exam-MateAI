@@ -3,11 +3,17 @@ import { config } from '../../config/index.js';
 import { logger } from '../logging/logger.js';
 import {
   AIChatResponse,
+  DetailedPaperAnalysisResponse,
   DocumentAIMetadata,
   GeneratedQuizItem,
   IAIProvider,
   PaperAnalysisResponse,
+  PaperInputData,
 } from './ai.interface.js';
+import {
+  STUDY_ASSISTANT_SYSTEM_PROMPT,
+  cleanAssistantAnswer,
+} from './study-assistant-prompt.js';
 
 export class OpenAIProvider implements IAIProvider {
   private client: OpenAI | null = null;
@@ -83,25 +89,16 @@ You MUST output ONLY a valid JSON object matching this schema:
     context?: string,
     history?: Array<{ role: string; message: string }>
   ): Promise<AIChatResponse> {
-    const systemPrompt = `You are ExamMateAI, an advanced, strict, grounded academic study assistant powered by OpenAI.
-Your mission is to help university students prepare for exams using ONLY their uploaded study materials.
-
-STRICT GROUNDING RULES:
-1. Answer ONLY using the facts and information present in the provided === STUDY MATERIAL CONTEXT ===.
-2. If the context does not contain enough information to answer the question accurately, you MUST reply:
-"I couldn't find enough information about this in your uploaded study material."
-3. Never make up facts, external definitions, formulas, or hypothetical information.
-4. When stating facts, cite the exact source section or page (e.g. 'Slide 12' or 'Page 4') based on the section markers in the context.
-5. Provide clear, structured, well-explained academic responses.`;
+    const systemPrompt = STUDY_ASSISTANT_SYSTEM_PROMPT;
 
     let userPrompt = '';
     if (context && context.trim().length > 0) {
       userPrompt += `=== STUDY MATERIAL CONTEXT ===\n${context}\n===============================\n\n`;
     } else {
-      userPrompt += '[No document context provided]\n\n';
+      userPrompt += '[No document context provided — no matching text was found in the uploaded documents]\n\n';
     }
 
-    userPrompt += `Student Question: ${question}`;
+    userPrompt += `Student Question: ${question}\n\nFormat your answer according to the point-wise exam format, bold key concepts, omit repeated "---" dividers, and end with the verified **References** section.`;
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt },
@@ -119,22 +116,22 @@ STRICT GROUNDING RULES:
     messages.push({ role: 'user', content: userPrompt });
 
     try {
-      const response = await this.callRawMessages(messages, false);
+      const rawResponse = await this.callRawMessages(messages, false);
+      const response = cleanAssistantAnswer(rawResponse);
       let citation = '';
       let pageNumber = 1;
 
       if (context) {
-        const slideMatch = context.match(/--- (Slide \d+[^-\n]*) ---/);
+        const slideMatch = context.match(/--- (Slide \d+[^-\n]*) ---/i) || context.match(/Slide (\d+)/i);
         if (slideMatch) {
-          citation = slideMatch[1];
+          citation = slideMatch[0];
           const numMatch = citation.match(/\d+/);
           if (numMatch) pageNumber = parseInt(numMatch[0], 10);
         } else {
-          const pageMatch = context.match(/--- (Page \d+) ---/);
+          const pageMatch = context.match(/Page (\d+)/i) || context.match(/--- (Page \d+) ---/i);
           if (pageMatch) {
-            citation = pageMatch[1];
-            const numMatch = citation.match(/\d+/);
-            if (numMatch) pageNumber = parseInt(numMatch[0], 10);
+            citation = `Page ${pageMatch[1]}`;
+            pageNumber = parseInt(pageMatch[1], 10);
           } else {
             const sectionMatch = context.match(/--- ([^-\n]+) ---/);
             if (sectionMatch) {
@@ -144,13 +141,20 @@ STRICT GROUNDING RULES:
         }
       }
 
-      const notFound = response.includes("couldn't find enough information");
+      const usesGeneralContext =
+        response.includes('General Academic Context') ||
+        response.toLowerCase().includes('not verified in your uploaded notes') ||
+        response.toLowerCase().includes('not covered in the uploaded');
+
+      const notFound =
+        response.includes("couldn't find enough information") ||
+        response.toLowerCase().includes('could not find enough information');
 
       return {
         answer: response.trim(),
         sourceCitation: citation || undefined,
         pageNumber: citation ? pageNumber : undefined,
-        confidence: notFound ? 0.2 : 0.95,
+        confidence: notFound ? 0.3 : usesGeneralContext ? 0.6 : 0.95,
       };
     } catch (err: any) {
       logger.error({ error: err.message }, '[OpenAI] askQuestion failed.');
@@ -192,63 +196,152 @@ Do not hallucinate or add facts outside the text. Maintain clear academic struct
     }
   }
 
-  public async analyzePreviousPapers(paperTexts: string[]): Promise<PaperAnalysisResponse> {
-    const combined = paperTexts.join('\n\n---\n\n');
-    const truncated = combined.length > 25000 ? combined.substring(0, 25000) : combined;
+  public async analyzePreviousPapers(
+    papers: PaperInputData[] | string[],
+    notesContext?: string
+  ): Promise<DetailedPaperAnalysisResponse> {
+    const formattedPapers: PaperInputData[] = (papers as any[]).map((p, idx) => {
+      if (typeof p === 'string') {
+        return {
+          paperName: `Question Paper ${idx + 1}`,
+          year: 'Not specified',
+          text: p,
+        };
+      }
+      return {
+        paperName: p.paperName || `Paper ${idx + 1}`,
+        year: p.year || 'Not specified',
+        text: p.text || '',
+      };
+    });
+
+    const combinedPapersText = formattedPapers
+      .map(
+        (p) =>
+          `=== QUESTION PAPER: ${p.paperName} (Exam Year: ${p.year || 'Not specified'}) ===\n${p.text}`
+      )
+      .join('\n\n----------------------------------------\n\n');
+
+    let fullInput = combinedPapersText;
+    if (notesContext && notesContext.trim()) {
+      fullInput += `\n\n=== SYLLABUS / STUDY NOTES CONTEXT ===\n${notesContext.substring(0, 8000)}`;
+    }
+
+    const truncated = fullInput.length > 25000 ? fullInput.substring(0, 25000) : fullInput;
 
     const systemPrompt = `You are ExamMateAI's PYQ Question Paper Analyzer.
-Analyze the examination question paper texts and extract recurring questions, semantically similar questions, and high-weightage units.
-Output ONLY a valid JSON object matching this schema:
-{
-  "repeatedQuestions": string[],
-  "repeatedTopics": string[],
-  "highWeightageUnits": string[],
-  "questionFrequency": { [questionOrTopic: string]: number }
-}`;
+Analyze the provided examination question papers and extract questions, identify recurring topics, calculate real frequencies, detect repeated/similar questions, and create an evidence-grounded revision plan.
+Output ONLY a valid JSON object matching the DetailedPaperAnalysisResponse schema.`;
 
     try {
       const response = await this.callChatCompletion(systemPrompt, truncated, true);
       const parsed = JSON.parse(response);
-      return {
-        repeatedQuestions: Array.isArray(parsed.repeatedQuestions) ? parsed.repeatedQuestions : [],
-        repeatedTopics: Array.isArray(parsed.repeatedTopics) ? parsed.repeatedTopics : [],
-        highWeightageUnits: Array.isArray(parsed.highWeightageUnits) ? parsed.highWeightageUnits : [],
-        questionFrequency: parsed.questionFrequency || {},
-      };
+      if (parsed && parsed.papers && parsed.topicFrequency) {
+        parsed.repeatedTopics = parsed.topicFrequency.map((t: any) => t.topic);
+        parsed.highWeightageUnits = parsed.topicFrequency
+          .filter((t: any) => t.priority === 'High')
+          .map((t: any) => t.topic);
+        const freqMap: Record<string, number> = {};
+        parsed.topicFrequency.forEach((t: any) => {
+          freqMap[t.topic] = t.count;
+        });
+        parsed.questionFrequency = freqMap;
+        return parsed;
+      }
     } catch (err: any) {
       logger.error({ error: err.message }, '[OpenAI] analyzePreviousPapers failed.');
-      return {
-        repeatedQuestions: ['Explain fundamental architectures with block diagrams.'],
-        repeatedTopics: ['Core Fundamentals', 'Algorithms & Protocols'],
-        highWeightageUnits: ['Unit 1', 'Unit 3'],
-        questionFrequency: { 'Core Fundamentals': 3 },
-      };
     }
+
+    const fallbackPaperItems = formattedPapers.map((p) => ({
+      paperName: p.paperName,
+      year: p.year || 'Not specified',
+      totalMarks: 'Not specified' as const,
+      questionsCount: 1,
+      topics: ['Extracted Question Paper Topics'],
+      questions: [
+        {
+          number: 'Q1',
+          text: p.text.substring(0, 160) || 'Previous year examination question.',
+          marks: 'Not specified' as const,
+          section: 'Main',
+          topic: 'General Topic',
+          difficulty: 'Medium' as const,
+          sourcePaper: p.paperName,
+          year: p.year || 'Not specified',
+        },
+      ],
+    }));
+
+    return {
+      summary: {
+        papersProcessed: formattedPapers.length,
+        totalQuestions: formattedPapers.length,
+        topicsIdentified: 1,
+        repeatedCount: 0,
+      },
+      papers: fallbackPaperItems,
+      topicFrequency: [
+        {
+          topic: 'General Exam Topic',
+          count: formattedPapers.length,
+          totalMarks: 'Not specified',
+          papers: formattedPapers.map((p) => p.paperName),
+          priority: 'Medium',
+          rationale: 'Extracted from uploaded examination papers.',
+        },
+      ],
+      repeatedQuestions: [],
+      importantTopics: [
+        {
+          topic: 'General Exam Topic',
+          frequency: formattedPapers.length,
+          importanceLevel: 'High',
+          reasons: ['Appeared in uploaded previous papers'],
+          totalMarks: 'Not specified',
+        },
+      ],
+      revisionPlan: [
+        {
+          step: 1,
+          topic: 'General Exam Topic',
+          priority: 'High',
+          rationale: 'Core material from uploaded papers.',
+          suggestedAction: 'Review definitions and standard exam problems.',
+          paperReferences: formattedPapers.map((p) => p.paperName),
+        },
+      ],
+      repeatedTopics: ['General Exam Topic'],
+      highWeightageUnits: ['General Exam Topic'],
+      questionFrequency: { 'General Exam Topic': formattedPapers.length },
+    };
   }
 
   public async generateQuizQuestions(
     subjectName: string,
     content: string,
     difficulty: string,
-    count: number = 5
+    count: number = 5,
+    questionType: 'MCQ' | 'TrueFalse' | 'Mixed' = 'MCQ'
   ): Promise<GeneratedQuizItem[]> {
     const truncated = content.length > 20000 ? content.substring(0, 20000) : content;
 
     const systemPrompt = `You are ExamMateAI Quiz Generator.
-Generate exactly ${count} Multiple Choice Questions (MCQs) for '${subjectName}' at '${difficulty}' difficulty level.
+Generate exactly ${count} academic quiz questions for '${subjectName}' at '${difficulty}' difficulty level.
 Every question MUST be strictly grounded in the provided document content.
-Output ONLY a JSON array of objects with this schema:
+Output ONLY a JSON array of objects with schema:
 [
   {
     "question": string,
+    "questionType": "${questionType === 'TrueFalse' ? 'TrueFalse' : 'MCQ'}",
     "optionA": string,
     "optionB": string,
     "optionC": string,
     "optionD": string,
-    "correctAnswer": string ("A" | "B" | "C" | "D"),
+    "correctAnswer": "A" | "B" | "C" | "D",
     "explanation": string,
     "topic": string,
-    "sourceCitation": string
+    "sourceCitation": string,
+    "pageNumber": number
   }
 ]`;
 
@@ -256,7 +349,11 @@ Output ONLY a JSON array of objects with this schema:
       const response = await this.callChatCompletion(systemPrompt, truncated, true);
       const parsed = JSON.parse(response);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map((item) => ({
+          ...item,
+          questionType: item.questionType || (item.optionC === '' ? 'TrueFalse' : 'MCQ'),
+          options: [item.optionA, item.optionB, item.optionC, item.optionD].filter(Boolean),
+        }));
       }
     } catch (err: any) {
       logger.error({ error: err.message }, '[OpenAI] generateQuizQuestions failed.');
@@ -264,15 +361,18 @@ Output ONLY a JSON array of objects with this schema:
 
     return [
       {
-        question: `What is a primary principle discussed in ${subjectName}?`,
-        optionA: 'Systematic modular analysis and abstraction',
-        optionB: 'Random unstructured iteration',
-        optionC: 'Ignoring boundary condition verification',
-        optionD: 'Deprecating unit specifications',
+        question: `Based on the provided notes for ${subjectName}, which statement represents a core concept?`,
+        questionType: 'MCQ',
+        options: ['Core foundational principle', 'Unrelated speculation', 'Undefined behavior', 'Arbitrary rule'],
+        optionA: 'Core foundational principle',
+        optionB: 'Unrelated speculation',
+        optionC: 'Undefined behavior',
+        optionD: 'Arbitrary rule',
         correctAnswer: 'A',
-        explanation: `The study material emphasizes systematic analysis and abstraction in ${subjectName}.`,
+        explanation: `Document material explains core principles in ${subjectName}.`,
         topic: subjectName,
         sourceCitation: `${subjectName} Overview`,
+        pageNumber: 1,
       },
     ];
   }

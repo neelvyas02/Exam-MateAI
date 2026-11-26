@@ -1,12 +1,44 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ListChecks, Sparkles, CheckCircle, XCircle, RotateCcw, MessagesSquare, Award } from "lucide-react";
-import { useState } from "react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Award,
+  BookOpen,
+  CheckCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FileCheck2,
+  FileText,
+  HelpCircle,
+  Layers,
+  ListChecks,
+  Loader2,
+  MessagesSquare,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -14,470 +46,969 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useRecallStore, QuizQuestion } from "@/data/recall-store";
+import { useRecallStore } from "@/data/recall-store";
+import { documentsApi, DocumentDto, QuizDto, QuizQuestionDto } from "@/lib/api";
 
 export const Route = createFileRoute("/app/quiz")({
   head: () => ({
     meta: [
-      { title: "Quiz Generator — Recall AI" },
+      { title: "Quiz Generator — ExamMateAI" },
       {
         name: "description",
-        content: "Generate practice multiple-choice questions from study materials, PYQs, high frequency or weak topics.",
-      },
-      { property: "og:title", content: "Quiz Generator — Recall AI" },
-      {
-        property: "og:description",
-        content: "Generate practice multiple-choice questions from study materials, PYQs, high frequency or weak topics.",
+        content: "Generate exam practice quizzes grounded directly in your uploaded lecture slides, notes, and study material.",
       },
     ],
   }),
   component: QuizPage,
 });
 
-const generatedQuizSeed: QuizQuestion[] = [
-  {
-    id: "gq1",
-    question: "In Natural Language Processing, which processing stage is primarily responsible for building syntactic parse trees from context-free grammars?",
-    options: ["Morphological Analysis", "Syntactic Parsing", "Semantic Analysis", "Discourse Integration"],
-    correctAnswer: 1,
-    explanation: "Syntactic parsing processes structural tokens against CFG production rules to build dependency and parse trees.",
-    topic: "Natural Language Processing",
-    sourceDoc: "NLP Notes & Semantic Processing.pdf",
-    sourcePageOrSlide: "Page 14",
-  },
-  {
-    id: "gq2",
-    question: "Which of the following is a non-trivial functional dependency condition required for Boyce-Codd Normal Form (BCNF)?",
-    options: [
-      "Every determinant X in X -> Y must be a candidate key / super key",
-      "Y must be a prime attribute only",
-      "No transitive dependencies can exist on non-prime attributes",
-      "Primary key must consist of multiple composite attributes",
-    ],
-    correctAnswer: 0,
-    explanation: "BCNF strictly requires that for every non-trivial functional dependency X -> Y, X must be a super key.",
-    topic: "Normalization & DBMS",
-    sourceDoc: "DBMS-Complete-Notes.pdf",
-    sourcePageOrSlide: "Page 86",
-  },
-  {
-    id: "gq3",
-    question: "In Deadlock Avoidance, the Banker's Algorithm evaluates a state as SAFE if and only if:",
-    options: [
-      "No processes are currently requesting mutex semaphores",
-      "A safe sequence exists in which all processes can eventually execute to completion",
-      "Available resources exceed maximum allocated resources across all threads",
-      "All deadlock conditions are satisfied simultaneously",
-    ],
-    correctAnswer: 1,
-    explanation: "A safe state guarantees that an execution order exists where every process can acquire its max claim and terminate cleanly.",
-    topic: "Operating Systems & Deadlocks",
-    sourceDoc: "Operating-Systems-Unit-1-to-3.pdf",
-    sourcePageOrSlide: "Page 62",
-  },
-];
-
 export function QuizPage() {
   const store = useRecallStore();
-  const [subject, setSubject] = useState("Artificial Intelligence");
-  const [chapter, setChapter] = useState("all");
-  const [source, setSource] = useState<
-    "Study Material" | "Previous Year Questions" | "Frequently Asked Topics" | "Weak Topics"
-  >("Study Material");
-  const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
-  const [count, setCount] = useState("5");
 
-  const [loading, setLoading] = useState(false);
-  const [activeQuiz, setActiveQuiz] = useState<QuizQuestion[] | null>(null);
-  const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
-  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  // Documents state
+  const [userDocs, setUserDocs] = useState<DocumentDto[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState<boolean>(false);
 
-  const [activeBackendQuizId, setActiveBackendQuizId] = useState<string | null>(null);
+  // Configuration state
+  const [sourceMode, setSourceMode] = useState<"document" | "multiple" | "general">("document");
+  const [selectedDocId, setSelectedDocId] = useState<string>("");
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
+  const [difficulty, setDifficulty] = useState<"Easy" | "Medium" | "Hard" | "Mixed">("Medium");
+  const [questionCount, setQuestionCount] = useState<string>("5");
+  const [questionType, setQuestionType] = useState<"MCQ" | "TrueFalse" | "Mixed">("MCQ");
 
-  const handleGenerateQuiz = async () => {
-    setLoading(true);
-    setActiveQuiz(null);
-    setUserAnswers({});
-    setQuizSubmitted(false);
-    setActiveBackendQuizId(null);
+  // Quiz active state
+  const [generating, setGenerating] = useState<boolean>(false);
+  const [activeQuiz, setActiveQuiz] = useState<QuizDto | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({}); // questionId -> "A" | "B" | "C" | "D"
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState<boolean>(false);
+  const [quizSubmitted, setQuizSubmitted] = useState<boolean>(false);
+  const [submissionResult, setSubmissionResult] = useState<{
+    score: number;
+    total: number;
+    percentage: number;
+    evaluatedQuestions: QuizQuestionDto[];
+  } | null>(null);
 
+  // Load documents from backend
+  const loadDocuments = async () => {
+    setLoadingDocs(true);
     try {
       if (store.backendAvailable) {
-        const subjectId = store.subjects[0]?.id || "00000000-0000-0000-0000-000000000000";
-        const qCountInt = parseInt(count) || 5;
-        const quizDto = await store.generateQuizAsync(subjectId, difficulty, qCountInt);
+        const docs = await documentsApi.getUserDocuments();
+        setUserDocs(docs);
 
-        setActiveBackendQuizId(quizDto.id);
-        const mappedQuestions: QuizQuestion[] = quizDto.questions.map((q) => {
-          let correctIndex = 0;
-          if (q.correctAnswer === "B" || q.correctAnswer === "1") correctIndex = 1;
-          else if (q.correctAnswer === "C" || q.correctAnswer === "2") correctIndex = 2;
-          else if (q.correctAnswer === "D" || q.correctAnswer === "3") correctIndex = 3;
-
-          return {
-            id: q.id,
-            question: q.question,
-            options: [q.optionA, q.optionB, q.optionC, q.optionD],
-            correctAnswer: correctIndex,
-            explanation: q.explanation || "Correct answer based on course materials.",
-            topic: quizDto.subjectName || "General Quiz Topic",
-            sourceDoc: quizDto.title || "ExamMate AI Generated Quiz",
-          };
-        });
-
-        setActiveQuiz(mappedQuestions);
-        toast.success(`Generated ${mappedQuestions.length} quiz questions from ${source}`);
-      } else {
-        setTimeout(() => {
-          setActiveQuiz(generatedQuizSeed);
-          toast.success(`Generated ${count} quiz questions from ${source} (Offline mode)`);
-        }, 800);
+        // Preselect the first ready document if none selected
+        const readyDocs = docs.filter((d) => d.processingStatus === "Ready");
+        if (readyDocs.length > 0 && !selectedDocId) {
+          setSelectedDocId(readyDocs[0].id);
+          if (readyDocs[0].subjectId) {
+            setSelectedSubjectId(readyDocs[0].subjectId);
+          }
+        }
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate quiz from backend.");
-      // Fallback
-      setActiveQuiz(generatedQuizSeed);
+      console.warn("Could not load user documents:", err);
     } finally {
-      setLoading(false);
+      setLoadingDocs(false);
     }
   };
 
-  const handleSubmitAnswers = async () => {
-    if (!activeQuiz) return;
-    setQuizSubmitted(true);
+  useEffect(() => {
+    loadDocuments();
+  }, [store.backendAvailable]);
 
-    if (store.backendAvailable && activeBackendQuizId) {
-      try {
-        const answerPayload = activeQuiz.map((q, idx) => {
-          const selectedIdx = userAnswers[idx];
-          let optionLetter = "A";
-          if (selectedIdx === 1) optionLetter = "B";
-          if (selectedIdx === 2) optionLetter = "C";
-          if (selectedIdx === 3) optionLetter = "D";
-          return {
-            questionId: q.id,
-            selectedOption: optionLetter,
-          };
-        });
-
-        const result = await store.submitQuizAsync(activeBackendQuizId, answerPayload);
-        toast.success(`Quiz evaluation complete! Score: ${result.score}/${result.totalQuestions} (${Math.round(result.percentage)}%)`);
-        return;
-      } catch (err: any) {
-        toast.error(err.message || "Failed to submit quiz to backend");
-      }
+  // Set default subject if not set
+  useEffect(() => {
+    if (store.subjects.length > 0 && !selectedSubjectId) {
+      setSelectedSubjectId(store.subjects[0].id);
     }
+  }, [store.subjects, selectedSubjectId]);
 
-    let correctCount = 0;
-    const weakList: string[] = [];
-    const strongList: string[] = [];
+  // Eligible documents (excluding failed or deleted)
+  const eligibleDocs = useMemo(() => {
+    return userDocs.filter(
+      (d) => d.documentType === "StudyMaterial" || d.documentType === "0" || !d.documentType
+    );
+  }, [userDocs]);
 
-    activeQuiz.forEach((q, idx) => {
-      if (userAnswers[idx] === q.correctAnswer) {
-        correctCount++;
-        strongList.push(q.topic);
+  // When selected document changes, sync subject
+  const handleSelectDoc = (docId: string) => {
+    setSelectedDocId(docId);
+    const doc = userDocs.find((d) => d.id === docId);
+    if (doc?.subjectId) {
+      setSelectedSubjectId(doc.subjectId);
+    }
+  };
+
+  // Toggle multi-doc selection
+  const toggleDocMulti = (docId: string) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
       } else {
-        weakList.push(q.topic);
+        next.add(docId);
       }
+      return next;
     });
-
-    const scorePct = Math.round((correctCount / activeQuiz.length) * 100);
-
-    store.recordQuizAttempt({
-      id: `qa_${Date.now()}`,
-      subject,
-      chapter: chapter !== "all" ? chapter : undefined,
-      source,
-      difficulty,
-      totalQuestions: activeQuiz.length,
-      score: correctCount,
-      percentage: scorePct,
-      completedAt: new Date().toISOString().split("T")[0],
-      strongTopics: Array.from(new Set(strongList)),
-      weakTopics: Array.from(new Set(weakList)),
-    });
-
-    toast.success(`Quiz evaluation complete! Score: ${correctCount}/${activeQuiz.length} (${scorePct}%)`);
   };
+
+  // Generate quiz handler
+  const handleGenerateQuiz = async () => {
+    // Validation
+    if (sourceMode === "document") {
+      if (!selectedDocId) {
+        toast.error("Please select an uploaded study document.");
+        return;
+      }
+      const doc = userDocs.find((d) => d.id === selectedDocId);
+      if (doc && doc.processingStatus !== "Ready") {
+        toast.error(
+          `Document "${doc.originalName || doc.fileName}" is not ready. Status: ${doc.processingStatus}`
+        );
+        return;
+      }
+    } else if (sourceMode === "multiple") {
+      if (selectedDocIds.size === 0) {
+        toast.error("Please select at least one study document.");
+        return;
+      }
+    } else {
+      if (!selectedSubjectId) {
+        toast.error("Please select a subject for general knowledge practice.");
+        return;
+      }
+    }
+
+    setGenerating(true);
+    setActiveQuiz(null);
+    setUserAnswers({});
+    setCurrentQuestionIndex(0);
+    setQuizSubmitted(false);
+    setSubmissionResult(null);
+
+    try {
+      const qCountInt = parseInt(questionCount, 10) || 5;
+      const targetSubject = store.subjects.find((s) => s.id === selectedSubjectId);
+
+      const payload: any = {
+        difficulty,
+        questionCount: qCountInt,
+        questionType,
+        topic: targetSubject?.name || "General Knowledge",
+      };
+
+      if (sourceMode === "document") {
+        payload.documentId = selectedDocId;
+        payload.subjectId = selectedSubjectId || undefined;
+      } else if (sourceMode === "multiple") {
+        payload.documentIds = Array.from(selectedDocIds);
+        payload.subjectId = selectedSubjectId || undefined;
+      } else {
+        payload.subjectId = selectedSubjectId;
+      }
+
+      const generated = await store.generateQuizAsync(payload);
+      setActiveQuiz(generated);
+      toast.success(
+        `Generated ${generated.questions.length} questions grounded in ${
+          sourceMode === "document" ? "selected document" : "study material"
+        }!`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate quiz from selected material.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Record an answer for the current question
+  const handleSelectAnswer = (questionId: string, optionLetter: string) => {
+    if (quizSubmitted) return;
+    setUserAnswers((prev) => ({
+      ...prev,
+      [questionId]: optionLetter,
+    }));
+  };
+
+  // Confirm submit modal trigger
+  const handleConfirmSubmitTrigger = () => {
+    if (!activeQuiz) return;
+    setSubmitConfirmOpen(true);
+  };
+
+  // Final submission handler
+  const handleFinalSubmit = async () => {
+    if (!activeQuiz) return;
+    setSubmitConfirmOpen(false);
+    setIsSubmitting(true);
+
+    try {
+      const answersPayload = activeQuiz.questions.map((q) => ({
+        questionId: q.id,
+        selectedOption: userAnswers[q.id] || "",
+      }));
+
+      const result = await store.submitQuizAsync(activeQuiz.id, answersPayload);
+
+      setSubmissionResult({
+        score: result.score,
+        total: result.totalQuestions,
+        percentage: Math.round(result.percentage),
+        evaluatedQuestions: result.questions,
+      });
+
+      setQuizSubmitted(true);
+      toast.success(
+        `Quiz submitted! Your Score: ${result.score}/${result.totalQuestions} (${Math.round(result.percentage)}%)`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit quiz answers");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Retry quiz (same questions, reset answers)
+  const handleRetryQuiz = () => {
+    setUserAnswers({});
+    setCurrentQuestionIndex(0);
+    setQuizSubmitted(false);
+    setSubmissionResult(null);
+    toast.info("Quiz reset. Good luck on your retry!");
+  };
+
+  // Question navigation
+  const currentQuestion = activeQuiz?.questions[currentQuestionIndex];
+  const totalQuestions = activeQuiz?.questions.length || 0;
+  const answeredCount = Object.keys(userAnswers).length;
+  const progressPercent = totalQuestions > 0 ? ((currentQuestionIndex + 1) / totalQuestions) * 100 : 0;
 
   return (
     <>
       <PageHeader
         icon={ListChecks}
-        title="Quiz"
-        description="Configure and generate practice MCQs from study materials, PYQs, frequently asked or weak topics."
+        title="Quiz Generator"
+        description="Generate evidence-grounded practice quizzes directly from your uploaded slides, notes, and study material."
       />
 
-      {/* QUIZ SETUP CONTROLS */}
-      <Card className="rounded-2xl border border-border bg-card shadow-soft font-sans">
-        <CardContent className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Subject</Label>
-            <Select value={subject} onValueChange={setSubject}>
-              <SelectTrigger className="rounded-md text-xs h-9">
-                <SelectValue placeholder="Select subject" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Artificial Intelligence">Artificial Intelligence</SelectItem>
-                <SelectItem value="Operating Systems">Operating Systems</SelectItem>
-                <SelectItem value="Database Systems">Database Systems</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* 1. QUIZ CONFIGURATION CARD (Shown when not taking a quiz or when quiz completed) */}
+      {(!activeQuiz || quizSubmitted) && (
+        <Card className="rounded-none border border-border bg-card shadow-sm mb-6 font-sans">
+          <CardHeader className="pb-3 border-b border-border">
+            <CardTitle className="font-serif text-base font-semibold text-foreground flex items-center justify-between">
+              <span>Configure Practice Quiz</span>
+              <Badge variant="outline" className="rounded-none text-xs">
+                AI Grounded Generation
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs font-sans">
+              Select your uploaded study material to ensure all quiz questions strictly reflect your course content.
+            </CardDescription>
+          </CardHeader>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Chapter</Label>
-            <Select value={chapter} onValueChange={setChapter}>
-              <SelectTrigger className="rounded-md text-xs h-9">
-                <SelectValue placeholder="Select chapter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Chapters</SelectItem>
-                <SelectItem value="01">Unit 01 — Introduction</SelectItem>
-                <SelectItem value="02">Unit 02 — Industrial AI</SelectItem>
-                <SelectItem value="03">Unit 03 — Knowledge Representation & NLP</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <CardContent className="pt-4 space-y-5">
+            {/* Source Mode Selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">1. Select Question Source *</Label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => setSourceMode("document")}
+                  className={`p-3 text-left border rounded-none text-xs transition-colors cursor-pointer ${
+                    sourceMode === "document"
+                      ? "border-primary bg-primary/5 font-semibold text-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <p className="font-semibold text-foreground flex items-center gap-1.5">
+                    <FileText className="h-4 w-4 text-primary" /> Uploaded Study Document
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Grounded strictly in an uploaded lecture slide or notes PDF.
+                  </p>
+                </button>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Question Source</Label>
-            <Select value={source} onValueChange={(v: any) => setSource(v)}>
-              <SelectTrigger className="rounded-md text-xs h-9">
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Study Material">Study Material</SelectItem>
-                <SelectItem value="Previous Year Questions">Previous Year Questions</SelectItem>
-                <SelectItem value="Frequently Asked Topics">Frequently Asked Topics</SelectItem>
-                <SelectItem value="Weak Topics">Weak Topics</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => setSourceMode("multiple")}
+                  className={`p-3 text-left border rounded-none text-xs transition-colors cursor-pointer ${
+                    sourceMode === "multiple"
+                      ? "border-primary bg-primary/5 font-semibold text-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <p className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-primary" /> Multiple Documents
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Combine concepts across multiple lecture notes or units.
+                  </p>
+                </button>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Difficulty</Label>
-            <Select value={difficulty} onValueChange={(v: any) => setDifficulty(v)}>
-              <SelectTrigger className="rounded-md text-xs h-9">
-                <SelectValue placeholder="Difficulty" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Easy">Easy</SelectItem>
-                <SelectItem value="Medium">Medium</SelectItem>
-                <SelectItem value="Hard">Hard</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => setSourceMode("general")}
+                  className={`p-3 text-left border rounded-none text-xs transition-colors cursor-pointer ${
+                    sourceMode === "general"
+                      ? "border-primary bg-primary/5 font-semibold text-foreground"
+                      : "border-border bg-card text-muted-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <p className="font-semibold text-foreground flex items-center gap-1.5">
+                    <BookOpen className="h-4 w-4 text-primary" /> General Subject Mode
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Practice general syllabus topics without specific uploaded text.
+                  </p>
+                </button>
+              </div>
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Question Count</Label>
-            <Select value={count} onValueChange={setCount}>
-              <SelectTrigger className="rounded-md text-xs h-9">
-                <SelectValue placeholder="Count" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5 Questions</SelectItem>
-                <SelectItem value="10">10 Questions</SelectItem>
-                <SelectItem value="20">20 Questions</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            {/* Document Picker (if sourceMode === "document") */}
+            {sourceMode === "document" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">
+                  2. Choose Specific Study Document *
+                </Label>
 
-          <div className="sm:col-span-2 lg:col-span-5 pt-2">
-            <Button
-              className="w-full sm:w-auto rounded-none text-xs"
-              disabled={loading}
-              onClick={handleGenerateQuiz}
-            >
-              <Sparkles className="mr-1.5 h-4 w-4" />
-              {loading ? "Generating Quiz…" : "Generate Practice Quiz"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                {loadingDocs ? (
+                  <div className="p-4 text-xs text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading documents...
+                  </div>
+                ) : eligibleDocs.length === 0 ? (
+                  <div className="p-4 border border-dashed border-border text-center text-xs text-muted-foreground space-y-2">
+                    <p>No study materials uploaded yet.</p>
+                    <Button asChild size="sm" variant="outline" className="rounded-none text-xs">
+                      <Link to="/app/materials">Upload Study Materials</Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-56 overflow-y-auto p-1 border border-border">
+                    {eligibleDocs.map((doc) => {
+                      const isSelected = selectedDocId === doc.id;
+                      const isReady = doc.processingStatus === "Ready";
 
-      {/* RESTRAINED LOADING STATE */}
-      {loading && (
-        <Card className="rounded-2xl border border-border bg-card shadow-soft">
-          <CardContent className="flex items-center gap-2.5 p-6 text-xs text-muted-foreground font-sans">
-            <span className="h-2 w-2 rounded-full bg-secondary animate-pulse" />
-            <span>Generating practice quiz from course materials…</span>
+                      return (
+                        <div
+                          key={doc.id}
+                          onClick={() => isReady && handleSelectDoc(doc.id)}
+                          className={`p-3 border text-left transition-colors cursor-pointer ${
+                            isSelected
+                              ? "border-primary bg-primary/5"
+                              : "border-border bg-card hover:bg-muted/20"
+                          } ${!isReady ? "opacity-50 cursor-not-allowed" : ""}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-semibold text-foreground truncate" title={doc.originalName || doc.fileName}>
+                              {doc.originalName || doc.fileName}
+                            </p>
+                            {isSelected && <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />}
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                            <span>{doc.subjectName || "Subject"}</span>
+                            <span>•</span>
+                            <span>{doc.pageCount || 1} pages/slides</span>
+                          </div>
+
+                          <div className="mt-2">
+                            {doc.processingStatus === "Ready" ? (
+                              <Badge className="bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 border-emerald-600/20 rounded-none text-[10px]">
+                                Ready
+                              </Badge>
+                            ) : doc.processingStatus === "Failed" ? (
+                              <Badge variant="destructive" className="rounded-none text-[10px]">
+                                Extraction Failed
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="rounded-none text-[10px]">
+                                Processing...
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Multiple Documents Picker (if sourceMode === "multiple") */}
+            {sourceMode === "multiple" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">2. Choose Documents to Combine *</Label>
+                <div className="grid gap-2 sm:grid-cols-2 max-h-56 overflow-y-auto p-1 border border-border">
+                  {eligibleDocs.map((doc) => {
+                    const isSelected = selectedDocIds.has(doc.id);
+                    const isReady = doc.processingStatus === "Ready";
+
+                    return (
+                      <div
+                        key={doc.id}
+                        onClick={() => isReady && toggleDocMulti(doc.id)}
+                        className={`p-2.5 border flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "border-border bg-card hover:bg-muted/20"
+                        } ${!isReady ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          disabled={!isReady}
+                          className="rounded-none"
+                        />
+                        <div className="min-w-0 flex-1 text-xs">
+                          <p className="font-semibold text-foreground truncate">{doc.originalName || doc.fileName}</p>
+                          <p className="text-[11px] text-muted-foreground">{doc.subjectName} • {doc.pageCount || 1} pages</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Quiz Parameters */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-2 border-t border-border">
+              {/* Subject */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Subject / Course</Label>
+                <Select value={selectedSubjectId} onValueChange={setSelectedSubjectId}>
+                  <SelectTrigger className="rounded-none text-xs h-9">
+                    <SelectValue placeholder="Select Subject" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    {store.subjects.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Number of Questions */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Number of Questions</Label>
+                <Select value={questionCount} onValueChange={setQuestionCount}>
+                  <SelectTrigger className="rounded-none text-xs h-9">
+                    <SelectValue placeholder="5 Questions" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    <SelectItem value="5">5 Questions</SelectItem>
+                    <SelectItem value="10">10 Questions</SelectItem>
+                    <SelectItem value="15">15 Questions</SelectItem>
+                    <SelectItem value="20">20 Questions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Difficulty */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Difficulty Level</Label>
+                <Select value={difficulty} onValueChange={(v: any) => setDifficulty(v)}>
+                  <SelectTrigger className="rounded-none text-xs h-9">
+                    <SelectValue placeholder="Medium" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    <SelectItem value="Easy">Easy (Recall & Definitions)</SelectItem>
+                    <SelectItem value="Medium">Medium (Application & Concepts)</SelectItem>
+                    <SelectItem value="Hard">Hard (Analysis & Complex Scenarios)</SelectItem>
+                    <SelectItem value="Mixed">Mixed (Balanced Assessment)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Question Type */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Question Type</Label>
+                <Select value={questionType} onValueChange={(v: any) => setQuestionType(v)}>
+                  <SelectTrigger className="rounded-none text-xs h-9">
+                    <SelectValue placeholder="MCQ" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    <SelectItem value="MCQ">Multiple Choice (4 Options)</SelectItem>
+                    <SelectItem value="TrueFalse">True / False</SelectItem>
+                    <SelectItem value="Mixed">Mixed (MCQ + True/False)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Launch Button */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Questions will be extracted and generated using Gemini based on technical definitions in your document.
+              </p>
+
+              <Button
+                onClick={handleGenerateQuiz}
+                disabled={generating}
+                className="rounded-none text-xs px-8 w-full sm:w-auto"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating Grounded Quiz...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate Practice Quiz
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* ACTIVE QUIZ PLAYER */}
-      {activeQuiz && !loading && (
-        <div className="space-y-6">
-          {/* QUIZ RESULTS HEADER IF SUBMITTED */}
-          {quizSubmitted && (
-            <Card className="rounded-2xl border border-border bg-accent/20 shadow-soft">
-              <CardHeader className="pb-3 border-b border-border">
-                <CardTitle className="font-display text-base font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-foreground">
-                    <Award className="h-5 w-5 text-secondary" /> Quiz Evaluation Results
-                  </span>
-                  <Badge variant="secondary" className="rounded-sm text-xs font-sans">
-                    Completed
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-4 text-xs font-sans">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                  <div className="rounded-xl border border-border bg-card p-3.5">
-                    <span className="text-muted-foreground block text-[11px]">Score</span>
-                    <span className="text-2xl font-bold text-foreground mt-0.5 block">
-                      {Object.keys(userAnswers).filter(
-                        (k) => userAnswers[Number(k)] === activeQuiz[Number(k)].correctAnswer
-                      ).length}{" "}
-                      / {activeQuiz.length}
-                    </span>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-3.5">
-                    <span className="text-muted-foreground block text-[11px]">Percentage</span>
-                    <span className="text-2xl font-bold text-secondary mt-0.5 block">
-                      {Math.round(
-                        (Object.keys(userAnswers).filter(
-                          (k) => userAnswers[Number(k)] === activeQuiz[Number(k)].correctAnswer
-                        ).length /
-                          activeQuiz.length) *
-                          100
-                      )}
-                      %
-                    </span>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-3.5">
-                    <span className="text-muted-foreground block text-[11px]">Strong Topics</span>
-                    <span className="font-semibold text-success block mt-1">
-                      {activeQuiz
-                        .filter((q, i) => userAnswers[i] === q.correctAnswer)
-                        .map((q) => q.topic)
-                        .join(", ") || "None"}
-                    </span>
-                  </div>
-                  <div className="rounded-xl border border-border bg-card p-3.5">
-                    <span className="text-muted-foreground block text-[11px]">Weak Topics</span>
-                    <span className="font-semibold text-destructive block mt-1">
-                      {activeQuiz
-                        .filter((q, i) => userAnswers[i] !== q.correctAnswer)
-                        .map((q) => q.topic)
-                        .join(", ") || "None"}
-                    </span>
-                  </div>
+      {/* 2. LOADING STATE */}
+      {generating && (
+        <Card className="rounded-none border border-border bg-card shadow-sm p-8 text-center font-sans space-y-3">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+          <p className="font-serif font-semibold text-base text-foreground">
+            Generating Questions from Selected Material...
+          </p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            Retrieving document chunks, grounding questions in technical definitions, and configuring answer explanations.
+          </p>
+        </Card>
+      )}
+
+      {/* 3. INTERACTIVE QUIZ-TAKING STEPPER (Active Quiz in progress) */}
+      {activeQuiz && !quizSubmitted && !generating && currentQuestion && (
+        <div className="space-y-6 font-sans">
+          {/* Header Bar with Stepper & Progress */}
+          <Card className="rounded-none border border-border bg-card shadow-sm">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                <div>
+                  <h3 className="font-serif font-bold text-sm text-foreground">
+                    {activeQuiz.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-0.5">
+                    Question {currentQuestionIndex + 1} of {totalQuestions} • {answeredCount} answered
+                  </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="rounded-none text-xs">
+                    {activeQuiz.difficulty} Difficulty
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleConfirmSubmitTrigger}
+                    className="rounded-none text-xs"
+                  >
+                    Submit Quiz
+                  </Button>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <Progress value={progressPercent} className="h-1.5 rounded-none" />
+
+              {/* Question Number Dots */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {activeQuiz.questions.map((q, qIndex) => {
+                  const isCurrent = qIndex === currentQuestionIndex;
+                  const isAnswered = Boolean(userAnswers[q.id]);
+
+                  return (
+                    <button
+                      key={q.id}
+                      type="button"
+                      onClick={() => setCurrentQuestionIndex(qIndex)}
+                      className={`h-7 w-7 text-xs font-semibold rounded-none border transition-colors cursor-pointer ${
+                        isCurrent
+                          ? "border-primary bg-primary text-primary-foreground font-bold"
+                          : isAnswered
+                          ? "border-primary/60 bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted/30"
+                      }`}
+                    >
+                      {qIndex + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Current Question Card */}
+          <Card className="rounded-none border border-border bg-card shadow-sm">
+            <CardHeader className="pb-3 border-b border-border">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Badge className="rounded-none text-xs bg-primary text-primary-foreground">
+                    Question {currentQuestionIndex + 1}
+                  </Badge>
+                  {currentQuestion.questionType && (
+                    <Badge variant="outline" className="rounded-none text-[10px]">
+                      {currentQuestion.questionType === "TrueFalse" ? "True / False" : "Multiple Choice"}
+                    </Badge>
+                  )}
+                </div>
+
+                {currentQuestion.sourceCitation && (
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    Grounded: {currentQuestion.sourceCitation}
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-6 space-y-6">
+              <p className="font-serif text-base sm:text-lg font-medium text-foreground leading-relaxed">
+                {currentQuestion.question}
+              </p>
+
+              {/* Options */}
+              {currentQuestion.questionType === "TrueFalse" ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {["True", "False"].map((optText, oIdx) => {
+                    const optionLetter = oIdx === 0 ? "A" : "B";
+                    const isSelected = userAnswers[currentQuestion.id] === optionLetter;
+
+                    return (
+                      <button
+                        key={optText}
+                        type="button"
+                        onClick={() => handleSelectAnswer(currentQuestion.id, optionLetter)}
+                        className={`p-5 text-left border rounded-none transition-all cursor-pointer flex items-center justify-between ${
+                          isSelected
+                            ? "border-primary bg-primary/10 ring-1 ring-primary font-bold text-foreground"
+                            : "border-border bg-card hover:bg-muted/20 text-foreground"
+                        }`}
+                      >
+                        <span className="text-sm font-semibold">{optText}</span>
+                        <div
+                          className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                            isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                          }`}
+                        >
+                          {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { label: "A", text: currentQuestion.optionA },
+                    { label: "B", text: currentQuestion.optionB },
+                    { label: "C", text: currentQuestion.optionC },
+                    { label: "D", text: currentQuestion.optionD },
+                  ]
+                    .filter((opt) => Boolean(opt.text))
+                    .map((opt) => {
+                      const isSelected = userAnswers[currentQuestion.id] === opt.label;
+
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          onClick={() => handleSelectAnswer(currentQuestion.id, opt.label)}
+                          className={`p-4 text-left border rounded-none transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                            isSelected
+                              ? "border-primary bg-primary/10 ring-1 ring-primary font-semibold text-foreground"
+                              : "border-border bg-card hover:bg-muted/20 text-foreground"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5 text-xs">
+                            <span className="font-bold text-primary">{opt.label}.</span>
+                            <span className="leading-relaxed">{opt.text}</span>
+                          </div>
+                          <div
+                            className={`h-4 w-4 rounded-full border shrink-0 mt-0.5 flex items-center justify-center ${
+                              isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                            }`}
+                          >
+                            {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+
+              {/* Navigation Controls */}
+              <div className="pt-4 border-t border-border flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
+                  disabled={currentQuestionIndex === 0}
+                  className="rounded-none text-xs"
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" /> Previous
+                </Button>
+
+                {currentQuestionIndex < totalQuestions - 1 ? (
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="rounded-none text-xs font-sans"
-                    onClick={handleGenerateQuiz}
+                    onClick={() => setCurrentQuestionIndex((prev) => Math.min(totalQuestions - 1, prev + 1))}
+                    className="rounded-none text-xs"
                   >
-                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Generate New Quiz
+                    Next Question <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
-                  <Button asChild size="sm" variant="outline" className="rounded-none text-xs font-sans">
-                    <Link to="/app/materials">Review Weak Topics</Link>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleConfirmSubmitTrigger}
+                    className="rounded-none text-xs px-6"
+                  >
+                    Submit Final Answers
                   </Button>
-                  <Button asChild size="sm" className="rounded-none text-xs font-sans">
-                    <Link to="/app/assistant">
-                      <MessagesSquare className="mr-1.5 h-3.5 w-3.5" /> Ask AI
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-          {/* QUESTIONS LIST */}
-          <div className="grid gap-5">
-            {activeQuiz.map((item, qi) => {
-              const selectedOption = userAnswers[qi];
-              const isRevealed = quizSubmitted;
+      {/* 4. POST-SUBMISSION RESULTS & DETAILED REVIEW */}
+      {quizSubmitted && submissionResult && activeQuiz && (
+        <div className="space-y-6 font-sans">
+          {/* Score Header Card */}
+          <Card className="rounded-none border border-border bg-card shadow-sm">
+            <CardHeader className="pb-3 border-b border-border">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <CardTitle className="font-serif text-lg font-bold text-foreground flex items-center gap-2">
+                  <Award className="h-5 w-5 text-primary" /> Quiz Evaluation Results
+                </CardTitle>
+                <Badge variant="outline" className="rounded-none text-xs">
+                  {submissionResult.percentage >= 70 ? "Pass (Proficient)" : "Needs Review"}
+                </Badge>
+              </div>
+            </CardHeader>
+
+            <CardContent className="pt-6 space-y-6">
+              {/* Metric Stat Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                <div className="p-4 border border-border bg-muted/10">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Score</p>
+                  <p className="text-2xl font-serif font-bold text-foreground mt-1">
+                    {submissionResult.score} / {submissionResult.total}
+                  </p>
+                </div>
+
+                <div className="p-4 border border-border bg-muted/10">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Percentage</p>
+                  <p className="text-2xl font-serif font-bold text-primary mt-1">
+                    {submissionResult.percentage}%
+                  </p>
+                </div>
+
+                <div className="p-4 border border-border bg-muted/10">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Correct Answers</p>
+                  <p className="text-2xl font-serif font-bold text-emerald-600 mt-1">
+                    {submissionResult.score}
+                  </p>
+                </div>
+
+                <div className="p-4 border border-border bg-muted/10">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Incorrect Answers</p>
+                  <p className="text-2xl font-serif font-bold text-destructive mt-1">
+                    {submissionResult.total - submissionResult.score}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+                <Button
+                  size="sm"
+                  onClick={handleRetryQuiz}
+                  className="rounded-none text-xs"
+                >
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Retry This Quiz
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setActiveQuiz(null);
+                    setQuizSubmitted(false);
+                    setSubmissionResult(null);
+                  }}
+                  className="rounded-none text-xs"
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Configure Another Quiz
+                </Button>
+                <Button asChild variant="outline" size="sm" className="rounded-none text-xs">
+                  <Link to="/app/assistant">
+                    <MessagesSquare className="mr-1.5 h-3.5 w-3.5" /> Ask AI about Incorrect Answers
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Question by Question In-Depth Review */}
+          <div className="space-y-4">
+            <h3 className="font-serif font-bold text-base text-foreground">
+              Question-by-Question Solution & Grounded Source Review
+            </h3>
+
+            {submissionResult.evaluatedQuestions.map((q, idx) => {
+              const userAnswer = userAnswers[q.id];
+              const correctAnswer = q.correctAnswer;
+              const isCorrect = userAnswer && userAnswer.toUpperCase() === correctAnswer.toUpperCase();
 
               return (
-                <Card key={item.id} className="rounded-2xl border border-border bg-card shadow-soft">
-                  <CardContent className="p-6 space-y-4">
-                    <div className="flex items-start justify-between gap-3 border-b border-border pb-3 font-sans">
+                <Card key={q.id} className="rounded-none border border-border bg-card shadow-sm">
+                  <CardContent className="p-5 space-y-4 text-xs font-sans">
+                    <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
                       <div className="flex items-center gap-2">
-                        <Badge className="rounded-sm text-xs bg-primary text-primary-foreground">{qi + 1}</Badge>
-                        <Badge variant="outline" className="rounded-sm text-[11px]">
-                          Topic: {item.topic}
+                        <Badge className="rounded-none text-xs bg-primary text-primary-foreground">
+                          Q{idx + 1}
                         </Badge>
+                        {isCorrect ? (
+                          <Badge className="bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 border-emerald-600/20 rounded-none text-xs">
+                            <CheckCircle2 className="mr-1 h-3 w-3" /> Correct
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="rounded-none text-xs">
+                            <XCircle className="mr-1 h-3 w-3" /> Incorrect
+                          </Badge>
+                        )}
                       </div>
-                      <span className="text-[11px] text-muted-foreground font-medium">
-                        Source: {item.sourceDoc} {item.sourcePageOrSlide ? `(${item.sourcePageOrSlide})` : ""}
-                      </span>
-                    </div>
 
-                    <p className="font-display font-medium text-base text-foreground leading-relaxed">{item.question}</p>
-
-                    <div className="grid gap-2.5 sm:grid-cols-2 font-sans">
-                      {item.options.map((opt, oi) => {
-                        const isSelected = selectedOption === oi;
-                        const isCorrect = item.correctAnswer === oi;
-
-                        let btnStyle = "border-border hover:border-secondary/60 hover:bg-accent/40 bg-card";
-                        if (isRevealed) {
-                          if (isCorrect) btnStyle = "border-success bg-success/10 font-bold text-foreground";
-                          else if (isSelected && !isCorrect)
-                            btnStyle = "border-destructive bg-destructive/10 text-destructive";
-                        } else if (isSelected) {
-                          btnStyle = "border-secondary bg-accent text-secondary font-semibold";
-                        }
-
-                        return (
-                          <button
-                            key={opt}
-                            disabled={quizSubmitted}
-                            onClick={() => setUserAnswers((prev) => ({ ...prev, [qi]: oi }))}
-                            className={`rounded-none border p-3.5 text-left text-xs transition-all flex items-center justify-between cursor-pointer ${btnStyle}`}
-                          >
-                            <span>
-                              <span className="mr-2 font-bold text-muted-foreground">
-                                {String.fromCharCode(65 + oi)}.
-                              </span>
-                              {opt}
-                            </span>
-                            {isRevealed && isCorrect && (
-                              <CheckCircle className="h-4 w-4 text-success shrink-0" />
-                            )}
-                            {isRevealed && isSelected && !isCorrect && (
-                              <XCircle className="h-4 w-4 text-destructive shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {isRevealed && (
-                      <div className="rounded-xl bg-muted/30 border border-border p-4 text-xs font-sans space-y-1">
-                        <span className="font-bold text-muted-foreground uppercase tracking-wider block text-[10px]">
-                          Explanation:
+                      {q.sourceCitation && (
+                        <span className="text-[11px] text-muted-foreground font-medium">
+                          Source: {q.sourceCitation}
                         </span>
-                        <p className="text-foreground leading-relaxed font-serif">{item.explanation}</p>
-                      </div>
-                    )}
+                      )}
+                    </div>
+
+                    <p className="font-serif text-sm font-medium text-foreground leading-relaxed">
+                      {q.question}
+                    </p>
+
+                    {/* Options list showing user selection and correct answer */}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {[
+                        { label: "A", text: q.optionA },
+                        { label: "B", text: q.optionB },
+                        { label: "C", text: q.optionC },
+                        { label: "D", text: q.optionD },
+                      ]
+                        .filter((opt) => Boolean(opt.text))
+                        .map((opt) => {
+                          const isThisCorrect = opt.label.toUpperCase() === correctAnswer.toUpperCase();
+                          const isThisSelected = userAnswer && userAnswer.toUpperCase() === opt.label.toUpperCase();
+
+                          let itemStyle = "border-border bg-card text-foreground";
+                          if (isThisCorrect) {
+                            itemStyle = "border-emerald-600 bg-emerald-600/10 font-bold text-foreground";
+                          } else if (isThisSelected && !isThisCorrect) {
+                            itemStyle = "border-destructive bg-destructive/10 text-destructive font-medium";
+                          }
+
+                          return (
+                            <div
+                              key={opt.label}
+                              className={`p-3 border rounded-none flex items-center justify-between text-xs ${itemStyle}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold">{opt.label}.</span>
+                                <span>{opt.text}</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {isThisSelected && (
+                                  <Badge variant="outline" className="rounded-none text-[10px] py-0">
+                                    Your choice
+                                  </Badge>
+                                )}
+                                {isThisCorrect && (
+                                  <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+
+                    {/* Grounded Explanation Box */}
+                    <div className="p-3.5 bg-muted/20 border border-border space-y-1">
+                      <p className="font-bold text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Explanation & Grounding:
+                      </p>
+                      <p className="font-serif text-xs leading-relaxed text-foreground">
+                        {q.explanation}
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               );
             })}
           </div>
-
-          {!quizSubmitted && (
-            <div className="flex justify-end pt-2">
-              <Button
-                className="rounded-none text-xs font-sans px-6"
-                disabled={Object.keys(userAnswers).length === 0}
-                onClick={handleSubmitAnswers}
-              >
-                Submit Quiz & View Results
-              </Button>
-            </div>
-          )}
         </div>
       )}
+
+      {/* CONFIRMATION MODAL BEFORE FINAL SUBMISSION */}
+      <Dialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
+        <DialogContent className="max-w-md rounded-none border border-border bg-card p-6 font-sans">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-base font-semibold text-foreground flex items-center gap-2">
+              <HelpCircle className="h-4 w-4 text-primary" /> Confirm Quiz Submission
+            </DialogTitle>
+            <DialogDescription className="text-xs font-sans">
+              You are about to submit your quiz for automated AI scoring and citation evaluation.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 text-xs space-y-2">
+            <p className="text-foreground font-medium">
+              You have answered <span className="font-bold text-primary">{answeredCount}</span> of{" "}
+              <span className="font-bold">{totalQuestions}</span> questions.
+            </p>
+
+            {answeredCount < totalQuestions && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  You have {totalQuestions - answeredCount} unanswered question(s). Unanswered questions will receive 0 marks.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button
+              variant="outline"
+              onClick={() => setSubmitConfirmOpen(false)}
+              className="rounded-none text-xs"
+            >
+              Back to Quiz
+            </Button>
+            <Button
+              onClick={handleFinalSubmit}
+              disabled={isSubmitting}
+              className="rounded-none text-xs px-6"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Evaluating...
+                </>
+              ) : (
+                "Confirm & Submit"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
-
-

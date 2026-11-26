@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Bookmark, Copy, FileText, MessagesSquare, Send, Filter } from "lucide-react";
+import { Bookmark, Copy, FileText, MessagesSquare, Send, Filter, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { MarkdownContent } from "@/components/markdown-content";
 import { useRecallStore } from "@/data/recall-store";
 
 export const Route = createFileRoute("/app/assistant")({
@@ -41,7 +42,10 @@ type Message =
       text: string;
       sourceDoc?: string;
       citationLocation?: string;
+      citations?: any[];
       isGrounded: boolean;
+      unverifiedContextUsed?: boolean;
+      groundingStatus?: string;
     };
 
 export function AssistantPage() {
@@ -87,22 +91,45 @@ export function AssistantPage() {
 
     try {
       const selectedDocId = selectedMaterial !== "all" ? selectedMaterial : undefined;
-      const apiResponse = await store.sendChatMessageAsync(q, selectedDocId);
+      const matchedMat = selectedDocId
+        ? store.materials.find((m) => m.id === selectedDocId)
+        : materialsList[0] || store.materials[0];
 
-      const matchedMat = store.materials.find(
+      let directContext: string | undefined = undefined;
+      if (matchedMat) {
+        directContext = `Document: ${matchedMat.name}\nSubject: ${matchedMat.subject}\nChapter ${matchedMat.chapterNumber || "01"}: ${matchedMat.chapterName || ""}\nContent: ${matchedMat.extractedContent || matchedMat.description}\nTopics: ${(matchedMat.topics || []).join(", ")}`;
+      }
+
+      const apiResponse = await store.sendChatMessageAsync(q, selectedDocId, null, directContext);
+
+      const resolvedMat = store.materials.find(
         (m) => m.id === selectedDocId || m.name === apiResponse.sourceDocument || m.id === apiResponse.documentId
-      );
+      ) || matchedMat;
+
       const isSlides =
-        matchedMat?.materialType === "Lecture Slides" ||
-        matchedMat?.fileType === "PPTX" ||
-        matchedMat?.fileType === "PPT" ||
-        matchedMat?.name?.toLowerCase().includes("ppt") ||
-        matchedMat?.name?.toLowerCase().includes("slide");
+        resolvedMat?.materialType === "Lecture Slides" ||
+        resolvedMat?.fileType === "PPTX" ||
+        resolvedMat?.fileType === "PPT" ||
+        resolvedMat?.name?.toLowerCase().includes("ppt") ||
+        resolvedMat?.name?.toLowerCase().includes("slide");
 
       let citationLoc = apiResponse.sourceCitation || undefined;
       if (apiResponse.pageNumber) {
         citationLoc = isSlides ? `Slide ${apiResponse.pageNumber}` : `Page ${apiResponse.pageNumber}`;
       }
+
+      const isGrounded =
+        apiResponse.isGrounded !== undefined
+          ? apiResponse.isGrounded
+          : apiResponse.confidence >= 0.7 &&
+            !apiResponse.message.toLowerCase().includes("couldn't find") &&
+            !apiResponse.message.toLowerCase().includes("not covered in");
+
+      const unverifiedContextUsed =
+        apiResponse.unverifiedContextUsed !== undefined
+          ? apiResponse.unverifiedContextUsed
+          : apiResponse.message.includes("General Academic Context") ||
+            apiResponse.message.toLowerCase().includes("not verified in your uploaded notes");
 
       setMessages((prev) => [
         ...prev,
@@ -110,25 +137,23 @@ export function AssistantPage() {
           id: apiResponse.id || crypto.randomUUID(),
           role: "assistant",
           text: apiResponse.message,
-          sourceDoc: apiResponse.sourceDocument || matchedMat?.name || undefined,
+          sourceDoc: apiResponse.sourceDocument || resolvedMat?.name || undefined,
           citationLocation: citationLoc,
-          isGrounded: apiResponse.confidence > 0.3 && !apiResponse.message.toLowerCase().includes("couldn't find"),
+          citations: apiResponse.citations || apiResponse.sources,
+          isGrounded,
+          unverifiedContextUsed,
+          groundingStatus: apiResponse.groundingStatus,
         },
       ]);
     } catch (error: any) {
-      if (store.backendAvailable) {
-        toast.error(error.message || "Failed to get AI response");
-      }
-      // Fallback for offline mode or guardrail
+      toast.error(error.message || "Failed to reach AI service");
       const matchedMat = materialsList[0] || store.materials[0];
       const isSlides =
         matchedMat?.materialType === "Lecture Slides" ||
         matchedMat?.fileType === "PPTX" ||
         matchedMat?.name?.toLowerCase().includes("ppt");
 
-      const fallbackText = matchedMat
-        ? `Based on your uploaded material "${matchedMat.name}":\n\n${matchedMat.description || matchedMat.extractedContent}\n\nTopics:\n${(matchedMat.topics || []).map((t) => `• ${t}`).join("\n")}`
-        : "I couldn't find enough information about this in your uploaded study material.";
+      const fallbackText = `⚠️ **Could not connect to the AI assistant service.**\n\n*Error details: ${error.message || "Network request failed"}*\n\nPlease make sure the backend server on port 5137 is running.`;
 
       setMessages((prev) => [
         ...prev,
@@ -137,8 +162,8 @@ export function AssistantPage() {
           role: "assistant",
           text: fallbackText,
           sourceDoc: matchedMat?.name,
-          citationLocation: isSlides ? "Slide 18" : "Page 18",
-          isGrounded: !!matchedMat,
+          citationLocation: isSlides ? "Slide 1" : "Page 1",
+          isGrounded: false,
         },
       ]);
     } finally {
@@ -215,13 +240,26 @@ export function AssistantPage() {
                     <SelectItem value="all">All Materials in Scope</SelectItem>
                     {materialsList.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
-                        {m.name}
+                        {m.name} {m.status && m.status !== "Ready" ? `(${m.status})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            {selectedMaterial !== "all" && (() => {
+              const selectedMatObj = materialsList.find((m) => m.id === selectedMaterial);
+              if (selectedMatObj && selectedMatObj.status && selectedMatObj.status !== "Ready") {
+                return (
+                  <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 font-sans flex items-center gap-2">
+                    <Clock className="h-4 w-4 shrink-0 text-blue-500" />
+                    <span>The selected document <strong>"{selectedMatObj.name}"</strong> is currently {selectedMatObj.status.toLowerCase()}. Question answering will be fully grounded once indexing finishes.</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {/* CHAT MESSAGES STREAM */}
@@ -235,11 +273,9 @@ export function AssistantPage() {
                 </div>
               ) : (
                 <div key={m.id} className="max-w-[92%] sm:max-w-2xl rounded-xl rounded-bl-none border border-border bg-card p-5 shadow-soft space-y-3 animate-fade-in-up">
-                  <div className="text-sm sm:text-[15px] leading-[1.65] font-serif text-foreground/90 whitespace-pre-wrap">
-                    {m.text}
-                  </div>
+                  <MarkdownContent content={m.text} />
 
-                  {m.isGrounded && m.sourceDoc ? (
+                  {m.sourceDoc ? (
                     <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/70 text-xs font-sans text-muted-foreground">
                       <span className="text-[11px] font-semibold text-muted-foreground">Source:</span>
                       <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/40 px-2 py-0.5 rounded-sm">
@@ -252,10 +288,18 @@ export function AssistantPage() {
                           </>
                         ) : null}
                       </span>
+                      {m.isGrounded && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-sm">
+                          <CheckCircle2 className="h-3 w-3" /> Verified in Notes
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <div className="rounded-sm bg-warning/10 border border-warning/20 px-3 py-2 text-xs text-warning-foreground font-medium font-sans">
-                      Grounding notice: Unverified context omitted from answer.
+                  ) : null}
+
+                  {m.unverifiedContextUsed && (
+                    <div className="rounded-sm bg-warning/10 border border-warning/20 px-3 py-2 text-xs text-warning-foreground font-medium font-sans flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
+                      <span>Grounding notice: Includes general academic knowledge not explicitly verified in your uploaded notes.</span>
                     </div>
                   )}
 

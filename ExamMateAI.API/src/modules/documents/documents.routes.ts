@@ -50,4 +50,4 @@ documentsRoutes.get('/download/:id', optionalAuthenticate, documentsController.d
 documentsRoutes.get('/:id/download', optionalAuthenticate, documentsController.downloadDocument);
 documentsRoutes.get('/:id', optionalAuthenticate, documentsController.getDocumentById);
 documentsRoutes.get('/', optionalAuthenticate, documentsController.getUserDocuments);
-documentsRoutes.delete('/:id', authenticate, documentsController.deleteDocument);
+documentsRoutes.delete('/:id', optionalAuthenticate, documentsController.deleteDocument);

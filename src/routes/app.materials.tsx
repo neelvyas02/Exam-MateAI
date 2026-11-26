@@ -11,7 +11,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { UploadDropzone } from "@/components/upload-dropzone";
@@ -75,6 +75,27 @@ export function LibraryPage() {
 
   // Processing Progress Modal State
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Smart polling: Automatically poll while any document is Processing/Uploaded, and stop once Ready/Failed
+  useEffect(() => {
+    const hasPending = store.materials.some(
+      (m) => m.status === "Processing" || m.status === "Uploaded"
+    );
+    if (!hasPending) return;
+
+    let pollCount = 0;
+    const maxPolls = 30; // Max 60 seconds
+
+    const timer = setInterval(async () => {
+      pollCount++;
+      await store.refreshMaterialsAsync();
+      if (pollCount >= maxPolls) {
+        clearInterval(timer);
+      }
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [store.materials]);
 
   // Group materials by Subject -> Chapter
   const subjectsMap: Record<string, Record<string, StudyMaterialItem[]>> = {};

@@ -14,10 +14,22 @@ async function resolveUserId(req: Request): Promise<string> {
 export class QuestionAnalysisController {
   public async analyze(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { previousPaperIds } = req.body;
+      const { previousPaperIds, paperIds, subjectId } = req.body;
+      const ids = previousPaperIds || paperIds || [];
       const userId = await resolveUserId(req);
-      const result = await questionAnalysisService.analyzePreviousPapers(userId, previousPaperIds);
+      const result = await questionAnalysisService.analyzePreviousPapers(userId, ids, subjectId);
       res.status(200).json(ApiResponseHelper.success(result, 'Question paper analysis performed successfully.'));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async getLatest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = await resolveUserId(req);
+      const subjectId = req.query.subjectId as string | undefined;
+      const result = await questionAnalysisService.getLatestAnalysis(userId, subjectId);
+      res.status(200).json(ApiResponseHelper.success(result, 'Latest question paper analysis retrieved.'));
     } catch (err) {
       next(err);
     }
@@ -34,3 +46,4 @@ export class QuestionAnalysisController {
 }
 
 export const questionAnalysisController = new QuestionAnalysisController();
+

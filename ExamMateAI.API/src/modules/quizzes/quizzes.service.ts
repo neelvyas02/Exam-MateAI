@@ -6,6 +6,8 @@ export interface QuizQuestionDto {
   id: string;
   quizId: string;
   question: string;
+  questionType?: 'MCQ' | 'TrueFalse';
+  options?: string[];
   optionA: string;
   optionB: string;
   optionC: string;
@@ -13,6 +15,8 @@ export interface QuizQuestionDto {
   correctAnswer: string;
   explanation: string;
   selectedOption?: string | null;
+  sourceCitation?: string;
+  pageNumber?: number;
 }
 
 export interface QuizDto {
@@ -22,6 +26,8 @@ export interface QuizDto {
   subjectName: string;
   title: string;
   difficulty: string;
+  questionType?: string;
+  sourceDocName?: string;
   score?: number | null;
   totalQuestions: number;
   questions: QuizQuestionDto[];
@@ -45,27 +51,59 @@ export class QuizService {
       documentId?: string;
       difficulty?: string;
       questionCount?: number;
+      questionType?: 'MCQ' | 'TrueFalse' | 'Mixed';
       topic?: string;
     }
   ): Promise<QuizDto> {
     let subjectName = dto.topic || 'General Knowledge';
     let targetSubjectId = dto.subjectId || null;
     let targetDocId = dto.documentId || (dto.documentIds && dto.documentIds[0]) || null;
+    let sourceDocName = '';
     let combinedText = '';
 
     const targetDocIds = dto.documentIds || (dto.documentId ? [dto.documentId] : []);
 
     if (targetDocIds.length > 0) {
       const documents = await prisma.document.findMany({
-        where: { id: { in: targetDocIds }, userId, isDeleted: false },
-        include: { chunks: { take: 8 }, subject: true },
+        where: {
+          id: { in: targetDocIds },
+          isDeleted: false,
+        },
+        include: {
+          chunks: { orderBy: { chunkIndex: 'asc' }, take: 30 },
+          subject: true,
+        },
       });
 
+      if (documents.length === 0) {
+        throw new NotFoundError('Selected document(s) not found or have been deleted.');
+      }
+
       for (const doc of documents) {
+        if (doc.processingStatus !== 'Ready') {
+          if (doc.processingStatus === 'Failed') {
+            throw new BadRequestError(
+              `Document "${doc.originalName || doc.fileName}" processing failed. Please re-upload or select another document.`
+            );
+          } else {
+            throw new BadRequestError(
+              `Document "${doc.originalName || doc.fileName}" is still being processed. Please wait until status is Ready.`
+            );
+          }
+        }
+
         if (!targetSubjectId && doc.subjectId) targetSubjectId = doc.subjectId;
         if (doc.subject) subjectName = doc.subject.name;
+        if (!sourceDocName) sourceDocName = doc.originalName || doc.fileName;
+
         if (doc.chunks && doc.chunks.length > 0) {
-          combinedText += doc.chunks.map((c) => c.chunkText).join('\n') + '\n\n';
+          const docChunksFormatted = doc.chunks
+            .map((c) => {
+              const marker = c.pageNumber ? `--- Page/Slide ${c.pageNumber} ---` : '';
+              return `${marker}\n${c.chunkText}`;
+            })
+            .join('\n\n');
+          combinedText += docChunksFormatted + '\n\n';
         }
       }
     } else if (dto.subjectId) {
@@ -73,9 +111,9 @@ export class QuizService {
         where: { id: dto.subjectId },
         include: {
           documents: {
-            where: { isDeleted: false },
-            include: { chunks: true },
-            take: 5,
+            where: { isDeleted: false, processingStatus: 'Ready' },
+            include: { chunks: { orderBy: { chunkIndex: 'asc' }, take: 10 } },
+            take: 4,
           },
         },
       });
@@ -88,6 +126,7 @@ export class QuizService {
       targetSubjectId = subject.id;
 
       for (const doc of subject.documents) {
+        if (!sourceDocName) sourceDocName = doc.originalName || doc.fileName;
         if (doc.chunks && doc.chunks.length > 0) {
           combinedText += doc.chunks.map((c) => c.chunkText).join('\n') + '\n\n';
         }
@@ -95,18 +134,25 @@ export class QuizService {
     }
 
     if (!combinedText.trim()) {
-      combinedText = `${subjectName} - Key principles, definitions, and concepts.`;
+      if (targetDocIds.length > 0) {
+        throw new BadRequestError(
+          'Selected document does not contain readable extracted text to generate questions. Please ensure document has readable text.'
+        );
+      }
+      combinedText = `${subjectName} - Key principles, core definitions, and foundational concepts.`;
     }
 
     const difficulty = dto.difficulty || 'Medium';
     const count = dto.questionCount || 5;
+    const qType = dto.questionType || 'MCQ';
 
     const ai = getAIProvider();
     const generatedItems = await ai.generateQuizQuestions(
       subjectName,
       combinedText,
       difficulty,
-      count
+      count,
+      qType
     );
 
     const quiz = await prisma.quiz.create({
@@ -114,32 +160,39 @@ export class QuizService {
         userId,
         subjectId: targetSubjectId,
         documentId: targetDocId,
-        title: `${subjectName} Quiz (${difficulty})`,
+        title: `${sourceDocName ? sourceDocName + ' — ' : ''}${subjectName} Quiz (${difficulty})`,
         difficulty,
         questionCount: generatedItems.length,
       },
     });
 
     const questionRecords = await Promise.all(
-      generatedItems.map((item, index) =>
-        prisma.quizQuestion.create({
+      generatedItems.map((item, index) => {
+        const optionsPayload = JSON.stringify({
+          options: item.options || [item.optionA, item.optionB, item.optionC, item.optionD].filter(Boolean),
+          questionType: item.questionType || 'MCQ',
+          sourceCitation: item.sourceCitation || (sourceDocName ? `${sourceDocName} · Page 1` : undefined),
+          pageNumber: item.pageNumber || 1,
+        });
+
+        return prisma.quizQuestion.create({
           data: {
             quizId: quiz.id,
             question: item.question,
-            options: JSON.stringify([item.optionA, item.optionB, item.optionC, item.optionD]),
+            options: optionsPayload,
             optionA: item.optionA,
             optionB: item.optionB,
-            optionC: item.optionC,
-            optionD: item.optionD,
+            optionC: item.optionC || '',
+            optionD: item.optionD || '',
             correctAnswer: item.correctAnswer || 'A',
-            explanation: item.explanation || 'Review subject study notes for detail.',
+            explanation: item.explanation || 'Refer to uploaded study material.',
             questionOrder: index + 1,
           },
-        })
-      )
+        });
+      })
     );
 
-    // Hide correct answers from client before quiz submission!
+    // Hide correct answers and explanations before submission
     return {
       id: quiz.id,
       userId: quiz.userId,
@@ -147,28 +200,42 @@ export class QuizService {
       subjectName,
       title: quiz.title,
       difficulty: quiz.difficulty,
+      questionType: qType,
+      sourceDocName: sourceDocName || undefined,
       score: quiz.score,
       totalQuestions: questionRecords.length,
-      questions: questionRecords.map((q) => ({
-        id: q.id,
-        quizId: q.quizId,
-        question: q.question,
-        optionA: q.optionA,
-        optionB: q.optionB,
-        optionC: q.optionC,
-        optionD: q.optionD,
-        correctAnswer: '', // Hidden before submission
-        explanation: '', // Hidden before submission
-      })),
+      questions: questionRecords.map((q) => {
+        let meta: any = null;
+        try {
+          meta = JSON.parse(q.options);
+        } catch {}
+        const isArr = Array.isArray(meta);
+        return {
+          id: q.id,
+          quizId: q.quizId,
+          question: q.question,
+          questionType: (!isArr && meta?.questionType) || (q.optionC === '' ? 'TrueFalse' : 'MCQ'),
+          options: isArr ? meta : meta?.options || [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+          optionA: q.optionA,
+          optionB: q.optionB,
+          optionC: q.optionC,
+          optionD: q.optionD,
+          correctAnswer: '', // Hidden before submission
+          explanation: '', // Hidden before submission
+          sourceCitation: !isArr ? meta?.sourceCitation : undefined,
+          pageNumber: !isArr ? meta?.pageNumber : undefined,
+        };
+      }),
       createdAt: quiz.createdAt.toISOString(),
     };
   }
 
   public async getQuizById(id: string, userId: string): Promise<QuizDto> {
     const quiz = await prisma.quiz.findFirst({
-      where: { id, userId },
+      where: { id },
       include: {
         subject: true,
+        document: true,
         questions: { orderBy: { questionOrder: 'asc' } },
       },
     });
@@ -186,23 +253,88 @@ export class QuizService {
       subjectName: quiz.subject?.name || 'General Subject',
       title: quiz.title,
       difficulty: quiz.difficulty,
+      sourceDocName: quiz.document?.originalName || quiz.document?.fileName || undefined,
       score: quiz.score,
       totalQuestions: quiz.questions.length,
-      questions: quiz.questions.map((q) => ({
-        id: q.id,
-        quizId: q.quizId,
-        question: q.question,
-        optionA: q.optionA,
-        optionB: q.optionB,
-        optionC: q.optionC,
-        optionD: q.optionD,
-        // Only reveal correct answers if already submitted
-        correctAnswer: isSubmitted ? q.correctAnswer : '',
-        explanation: isSubmitted ? q.explanation : '',
-        selectedOption: q.selectedOption,
-      })),
+      questions: quiz.questions.map((q) => {
+        let meta: any = null;
+        try {
+          meta = JSON.parse(q.options);
+        } catch {}
+        const isArr = Array.isArray(meta);
+        return {
+          id: q.id,
+          quizId: q.quizId,
+          question: q.question,
+          questionType: (!isArr && meta?.questionType) || (q.optionC === '' ? 'TrueFalse' : 'MCQ'),
+          options: isArr ? meta : meta?.options || [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+          optionA: q.optionA,
+          optionB: q.optionB,
+          optionC: q.optionC,
+          optionD: q.optionD,
+          correctAnswer: isSubmitted ? q.correctAnswer : '',
+          explanation: isSubmitted ? q.explanation : '',
+          selectedOption: q.selectedOption,
+          sourceCitation: !isArr ? meta?.sourceCitation : undefined,
+          pageNumber: !isArr ? meta?.pageNumber : undefined,
+        };
+      }),
       createdAt: quiz.createdAt.toISOString(),
     };
+  }
+
+  public async getQuizHistory(userId: string): Promise<QuizDto[]> {
+    const quizzes = await prisma.quiz.findMany({
+      where: {
+        OR: [{ userId }, { userId: 'demo-student' }],
+      },
+      include: {
+        subject: true,
+        document: true,
+        questions: { orderBy: { questionOrder: 'asc' } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+    });
+
+    return quizzes.map((quiz) => {
+      const isSubmitted = quiz.score !== null;
+      return {
+        id: quiz.id,
+        userId: quiz.userId,
+        subjectId: quiz.subjectId || '',
+        subjectName: quiz.subject?.name || 'General Subject',
+        title: quiz.title,
+        difficulty: quiz.difficulty,
+        sourceDocName: quiz.document?.originalName || quiz.document?.fileName || undefined,
+        score: quiz.score,
+        totalQuestions: quiz.questions.length,
+        questions: quiz.questions.map((q) => {
+          let meta: any = null;
+          try {
+            meta = JSON.parse(q.options);
+          } catch {}
+          const isArr = Array.isArray(meta);
+          return {
+            id: q.id,
+            quizId: q.quizId,
+            question: q.question,
+            questionType: (!isArr && meta?.questionType) || (q.optionC === '' ? 'TrueFalse' : 'MCQ'),
+            options: isArr ? meta : meta?.options || [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+            optionA: q.optionA,
+            optionB: q.optionB,
+            optionC: q.optionC,
+            optionD: q.optionD,
+            correctAnswer: isSubmitted ? q.correctAnswer : '',
+            explanation: isSubmitted ? q.explanation : '',
+            selectedOption: q.selectedOption,
+            sourceCitation: !isArr ? meta?.sourceCitation : undefined,
+            pageNumber: !isArr ? meta?.pageNumber : undefined,
+          };
+        }),
+        createdAt: quiz.createdAt.toISOString(),
+      };
+    });
   }
 
   public async submitQuiz(
@@ -213,8 +345,8 @@ export class QuizService {
     }
   ): Promise<QuizResultDto> {
     const quiz = await prisma.quiz.findFirst({
-      where: { id: dto.quizId, userId },
-      include: { questions: true },
+      where: { id: dto.quizId },
+      include: { questions: { orderBy: { questionOrder: 'asc' } } },
     });
 
     if (!quiz) {
@@ -228,7 +360,25 @@ export class QuizService {
 
     for (const q of quiz.questions) {
       const selected = answerMap.get(q.id) || null;
-      const isCorrect = selected && selected.toUpperCase() === q.correctAnswer.toUpperCase();
+      let isCorrect = false;
+
+      // Handle both letter ('A', 'B', 'C', 'D') and option text matching
+      if (selected) {
+        const selNorm = selected.trim().toUpperCase();
+        const corrNorm = q.correctAnswer.trim().toUpperCase();
+        if (selNorm === corrNorm) {
+          isCorrect = true;
+        } else if (corrNorm === 'A' && (selNorm === q.optionA.trim().toUpperCase() || selNorm === 'TRUE')) {
+          isCorrect = true;
+        } else if (corrNorm === 'B' && (selNorm === q.optionB.trim().toUpperCase() || selNorm === 'FALSE')) {
+          isCorrect = true;
+        } else if (corrNorm === 'C' && selNorm === q.optionC.trim().toUpperCase()) {
+          isCorrect = true;
+        } else if (corrNorm === 'D' && selNorm === q.optionD.trim().toUpperCase()) {
+          isCorrect = true;
+        }
+      }
+
       if (isCorrect) correctCount++;
 
       await prisma.quizQuestion.update({
@@ -236,10 +386,18 @@ export class QuizService {
         data: { selectedOption: selected },
       });
 
+      let meta: any = null;
+      try {
+        meta = JSON.parse(q.options);
+      } catch {}
+      const isArr = Array.isArray(meta);
+
       updatedQuestions.push({
         id: q.id,
         quizId: q.quizId,
         question: q.question,
+        questionType: (!isArr && meta?.questionType) || (q.optionC === '' ? 'TrueFalse' : 'MCQ'),
+        options: isArr ? meta : meta?.options || [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
         optionA: q.optionA,
         optionB: q.optionB,
         optionC: q.optionC,
@@ -247,6 +405,8 @@ export class QuizService {
         correctAnswer: q.correctAnswer,
         explanation: q.explanation,
         selectedOption: selected,
+        sourceCitation: !isArr ? meta?.sourceCitation : undefined,
+        pageNumber: !isArr ? meta?.pageNumber : undefined,
       });
     }
 
@@ -270,3 +430,4 @@ export class QuizService {
 }
 
 export const quizService = new QuizService();
+
